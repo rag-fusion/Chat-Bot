@@ -1,19 +1,42 @@
 import { useEffect, useState } from "react";
-import ChatUI from "./ChatUI"; // Changed import from ChatWindow to ChatUI
+import ChatUI from "./components/ChatUI";
 import Uploader from "./Uploader";
-import ResultItem from "./ResultItem";
-import SourceModal from "./SourceModal";
+import ContextViewer from "./components/ContextViewer";
+import SourceModal from "./components/SourceModal";
+import Header from "./components/Header";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "./components/ui/sheet";
 
 function App() {
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [results, setResults] = useState([]);
   const [modalItem, setModalItem] = useState(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") return false;
     const saved = localStorage.getItem("theme-dark");
     return saved ? JSON.parse(saved) : false;
   });
+
+  // Monitor online/offline status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -65,39 +88,79 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 transition-colors duration-300 dark:bg-neutral-950 dark:text-neutral-100">
-      <main className="max-w-4xl mx-auto p-4 sm:p-6 md:p-8 space-y-8">
-        <header className="flex items-center justify-between">
-          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 text-transparent bg-clip-text">
-            RAG Offline Chatbot
-          </h1>
-          <button
-            onClick={() => setDark((d) => !d)}
-            className="rounded-full border px-4 py-2 text-sm font-medium shadow-sm bg-white/60 backdrop-blur-sm hover:shadow-md transition-shadow dark:bg-neutral-900 dark:border-neutral-700"
-            aria-label="Toggle theme"
-          >
-            {dark ? "Light ☀️" : "Dark 🌙"}
-          </button>
-        </header>
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header dark={dark} setDark={setDark} isOnline={isOnline} />
 
-        <Uploader onUploaded={() => doSearch(null)} />
+      {/* Mobile Navigation */}
+      <div className="fixed bottom-4 left-4 right-4 flex items-center justify-center gap-2 lg:hidden">
+        <Sheet>
+          <SheetTrigger asChild>
+            <button className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              Upload Files
+            </button>
+          </SheetTrigger>
+          <SheetContent side="left">
+            <SheetHeader>
+              <SheetTitle>Upload Files</SheetTitle>
+            </SheetHeader>
+            <div className="mt-4">
+              <Uploader onUploaded={() => doSearch(null)} />
+            </div>
+          </SheetContent>
+        </Sheet>
 
-        {/* --- THIS IS THE KEY CHANGE --- */}
-        <ChatUI
-          messages={messages}
-          onSend={handleSend} // Prop name changed from onQuery to onSend
-          isTyping={isTyping}
-        />
-        {/* ----------------------------- */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <button className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              View Context
+            </button>
+          </SheetTrigger>
+          <SheetContent>
+            <SheetHeader>
+              <SheetTitle>Retrieved Context</SheetTitle>
+            </SheetHeader>
+            <div className="mt-4">
+              <ContextViewer results={results} onOpen={setModalItem} />
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
 
-        {results.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {results.map((r, i) => (
-              <ResultItem key={i} item={r} onOpen={setModalItem} />
-            ))}
+      <div className="container mx-auto flex flex-1 gap-4 p-4">
+        {/* Left Panel - File Upload */}
+        <aside className="hidden lg:flex w-72 flex-col gap-4">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Upload Files</h3>
+              <Uploader onUploaded={() => doSearch(null)} />
+            </div>
           </div>
-        )}
-      </main>
+        </aside>
+
+        {/* Center Panel - Chat Interface */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm h-full">
+            <div className="p-6 h-full">
+              <ChatUI
+                messages={messages}
+                onSend={handleSend}
+                isTyping={isTyping}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Right Panel - Context Viewer */}
+        <aside className="hidden lg:flex w-80 flex-col gap-4">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Retrieved Context</h3>
+              <ContextViewer results={results} onOpen={setModalItem} />
+            </div>
+          </div>
+        </aside>
+      </div>
+
       {modalItem && (
         <SourceModal item={modalItem} onClose={() => setModalItem(null)} />
       )}

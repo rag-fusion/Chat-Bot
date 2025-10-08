@@ -1,82 +1,161 @@
 import { useCallback, useState } from "react";
+import { UploadZone, FilePreview } from "./components/ui/upload-zone";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+
+const ACCEPTED_FILES = [
+  // Documents
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  // Images
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  // Audio
+  "audio/mpeg",
+  "audio/wav",
+  "audio/ogg",
+].join(",");
 
 export default function Uploader({ onUploaded }) {
   const [dragOver, setDragOver] = useState(false);
   const [status, setStatus] = useState("");
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
 
   const onDrop = useCallback(async (e) => {
     e.preventDefault();
     setDragOver(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    if (!files.length) return;
-    await uploadMany(files);
+    const droppedFiles = Array.from(e.dataTransfer.files || []);
+    if (!droppedFiles.length) return;
+    handleFiles(droppedFiles);
   }, []);
 
-  const upload = async (file) => {
-    setStatus(`Uploading ${file.name}...`);
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch("http://localhost:8000/ingest", {
-      method: "POST",
-      body: form,
-    });
-    const data = await res.json();
-    setStatus(`Indexed ${data.vectors_indexed} vectors from ${data.file}`);
-    onUploaded?.(data);
+  const handleFiles = async (newFiles) => {
+    const validFiles = newFiles.filter((f) =>
+      ACCEPTED_FILES.split(",").some((type) =>
+        f.type.match(new RegExp(type.replace("*", ".*")))
+      )
+    );
+
+    if (validFiles.length < newFiles.length) {
+      setError(
+        "Some files were skipped. Only PDF, DOCX, images, and audio files are supported."
+      );
+    }
+
+    setFiles((prev) => [...prev, ...validFiles]);
+    await uploadMany(validFiles);
   };
 
-  const uploadMany = async (files) => {
-    if (!files.length) return;
-    if (files.length === 1) {
-      return upload(files[0]);
+  const upload = async (file) => {
+    setUploading(true);
+    setError("");
+    setStatus(`Uploading ${file.name}...`);
+
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("http://localhost:8000/ingest", {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json();
+      setStatus(`Indexed ${data.vectors_indexed} vectors from ${data.file}`);
+      onUploaded?.(data);
+    } catch (e) {
+      setError("Failed to upload file. Please try again.");
+      setFiles((prev) => prev.filter((f) => f !== file));
+    } finally {
+      setUploading(false);
     }
-    setStatus(`Uploading ${files.length} files...`);
-    const form = new FormData();
-    files.forEach((f) => form.append("files", f));
-    const res = await fetch("http://localhost:8000/ingest/batch", {
-      method: "POST",
-      body: form,
-    });
-    const data = await res.json();
-    setStatus(
-      `Indexed ${data.vectors_indexed} vectors from ${
-        data.files?.length || 0
-      } files`
-    );
-    onUploaded?.(data);
+  };
+
+  const uploadMany = async (filesToUpload) => {
+    if (!filesToUpload.length) return;
+    if (filesToUpload.length === 1) {
+      return upload(filesToUpload[0]);
+    }
+
+    setUploading(true);
+    setError("");
+    setStatus(`Uploading ${filesToUpload.length} files...`);
+
+    try {
+      const form = new FormData();
+      filesToUpload.forEach((f) => form.append("files", f));
+      const res = await fetch("http://localhost:8000/ingest/batch", {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json();
+      setStatus(
+        `Indexed ${data.vectors_indexed} vectors from ${
+          data.files?.length || 0
+        } files`
+      );
+      onUploaded?.(data);
+    } catch (e) {
+      setError("Failed to upload files. Please try again.");
+      setFiles((prev) => prev.filter((f) => !filesToUpload.includes(f)));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeFile = (file) => {
+    setFiles((prev) => prev.filter((f) => f !== file));
   };
 
   return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragOver(true);
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={onDrop}
-      className={
-        "rounded-xl border-2 border-dashed p-6 text-center transition-colors " +
-        (dragOver
-          ? "bg-violet-50 border-violet-400 dark:bg-violet-900/30 dark:border-violet-500"
-          : "bg-white dark:bg-neutral-900 border-gray-300 dark:border-neutral-700")
-      }
-    >
-      <p className="text-sm text-gray-600 dark:text-gray-400">
-        Drag & drop documents here or
-      </p>
-      <label className="inline-block mt-3 cursor-pointer rounded-lg px-4 py-2 bg-violet-600 text-white font-medium shadow-sm transition-transform hover:scale-[1.02] active:scale-[0.98]">
-        Browse Files
-        <input
-          type="file"
-          className="hidden"
-          multiple
-          onChange={(e) => {
-            const files = Array.from(e.target.files || []);
-            if (files.length) uploadMany(files);
-          }}
+    <div className="space-y-4">
+      {/* Drop Zone */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+      >
+        <UploadZone
+          onFilesSelected={handleFiles}
+          accept={ACCEPTED_FILES}
+          multiple={true}
+          title="Drop your files here"
+          subtitle="Support for PDF, DOCX, images and audio files"
+          isDragOver={dragOver}
         />
-      </label>
-      {status && <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">{status}</div>}
+      </div>
+
+      {/* Status Messages */}
+      {(error || status || uploading) && (
+        <div className="flex items-center gap-2 text-sm p-3 rounded-lg border bg-card">
+          {error ? (
+            <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+          ) : uploading ? (
+            <Loader2 className="w-4 h-4 text-muted-foreground animate-spin shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+          )}
+          <p className={error ? "text-destructive" : "text-muted-foreground"}>
+            {error || status}
+          </p>
+        </div>
+      )}
+
+      {/* File List */}
+      {files.length > 0 && (
+        <div className="space-y-2">
+          {files.map((file, idx) => (
+            <FilePreview
+              key={`${file.name}-${idx}`}
+              file={file}
+              onDelete={removeFile}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
