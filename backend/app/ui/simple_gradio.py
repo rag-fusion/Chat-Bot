@@ -5,6 +5,7 @@ Simplified Gradio UI for the offline multimodal RAG system.
 import gradio as gr
 import os
 import tempfile
+import socket
 from typing import List, Dict, Any
 from ..ingestion import extract_any
 from ..embeddings import embed_text, embed_image
@@ -12,6 +13,18 @@ from ..vector_store import get_store
 from ..retriever import get_retriever
 from ..llm import build_adapter, load_config, generate_answer
 from ..utils import create_citations, format_source_reference
+
+
+def find_available_port(start_port: int = 7860, max_attempts: int = 10) -> int:
+    """Find an available port starting from start_port."""
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('localhost', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(f"No available port found in range {start_port}-{start_port + max_attempts - 1}")
 
 
 def ingest_file(file) -> str:
@@ -184,7 +197,26 @@ def create_simple_interface() -> gr.Blocks:
 def launch_simple_app(port: int = 7860, config_path: str = None):
     """Launch simplified Gradio app."""
     interface = create_simple_interface()
-    interface.launch(server_port=port, share=False, show_error=True)
+    
+    # Try to find an available port if the specified port is not available
+    try:
+        available_port = find_available_port(port)
+        if available_port != port:
+            print(f"Port {port} is not available. Using port {available_port} instead.")
+        port = available_port
+    except RuntimeError as e:
+        print(f"Error finding available port: {e}")
+        print("Trying to launch on the specified port anyway...")
+    
+    print(f"Launching Gradio interface on port {port}")
+    interface.launch(
+        server_port=port, 
+        share=False, 
+        show_error=True,
+        server_name="0.0.0.0",
+        inbrowser=False,
+        quiet=False
+    )
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ def main():
                        help="Choose interface: gradio (default) or fastapi")
     parser.add_argument("--port", type=int, default=7860,
                        help="Port to run the server on")
-    parser.add_argument("--host", default="0.0.0.0",
+    parser.add_argument("--host", default="127.0.0.1",
                        help="Host to bind to")
     parser.add_argument("--config", help="Path to config.yaml file")
     
