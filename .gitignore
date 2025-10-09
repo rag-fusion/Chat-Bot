@@ -28,3 +28,6 @@ build/
 # Ignore heavy model files
 backend/models/**/*.pt
 backend/models/**/*.safetensors
+
+backend/.venv/
+backend/models/
