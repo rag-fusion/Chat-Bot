@@ -6,12 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
-from .extractors import extract_any
-from .embeddings import embed_texts, embed_image_paths
-from .index_store import add_embeddings_with_metadata, status as index_status, rebuild_from_db, ensure_storage
+from .ingestion import extract_any
+from .embeddings import embed_text, embed_image
+from .vector_store import get_store
+from .retriever import get_retriever
+from .llm import build_adapter, load_config, generate_answer
+from .utils import create_citations
 import faiss
 import numpy as np
-from .rag import answer_query
 
 app = FastAPI(title="RAG Offline Chatbot Backend", version="0.1.0")
 
@@ -31,7 +33,6 @@ def health_check():
 
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...)):
-    ensure_storage()
     storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "storage"))
     os.makedirs(storage_dir, exist_ok=True)
     # mount static if not mounted yet
@@ -44,54 +45,39 @@ async def ingest(file: UploadFile = File(...)):
     with open(dest_path, "wb") as f:
         f.write(data)
 
-    # Extract chunks
+    # Extract chunks using new ingestion module
     chunks = extract_any(dest_path, file.filename, file.content_type or "")
-    # Separate text chunks vs image entries
-    text_chunks = [c for c in chunks if c.file_type in ("pdf", "docx", "text", "audio")]
-    image_chunks = [c for c in chunks if c.file_type == "image"]
-
-    vectors_added = 0
-    total_chunks = 0
-
-    if text_chunks:
-        texts = [c.content for c in text_chunks]
-        embs = embed_texts(texts)
-        meta = [
-            {
-                "content": c.content,
-                "file_name": c.file_name,
-                "file_type": c.file_type,
-                "page_number": c.page_number,
-                "timestamp": c.timestamp,
-                "filepath": c.filepath,
+    
+    # Generate embeddings and store using new vector store
+    store = get_store()
+    items = []
+    
+    for chunk in chunks:
+        if chunk.file_type == 'image':
+            embedding = embed_image(chunk.filepath)
+        else:
+            embedding = embed_text(chunk.content)
+        
+        items.append({
+            'embedding': embedding[0],  # Remove batch dimension
+            'metadata': {
+                'content': chunk.content,
+                'file_name': chunk.file_name,
+                'file_type': chunk.file_type,
+                'page_number': chunk.page_number,
+                'timestamp': chunk.timestamp,
+                'filepath': chunk.filepath,
+                'width': getattr(chunk, 'width', None),
+                'height': getattr(chunk, 'height', None),
+                'bbox': getattr(chunk, 'bbox', None),
+                'char_start': getattr(chunk, 'char_start', None),
+                'char_end': getattr(chunk, 'char_end', None),
+                'modality': chunk.file_type
             }
-            for c in text_chunks
-        ]
-        vectors_added += add_embeddings_with_metadata(embs, meta)
-        total_chunks += len(texts)
-
-    if image_chunks:
-        paths = [c.filepath for c in image_chunks if c.filepath]
-        if paths:
-            embs = embed_image_paths(paths)
-            meta = [
-                {
-                    "content": c.content,
-                    "file_name": c.file_name,
-                    "file_type": c.file_type,
-                    "page_number": c.page_number,
-                    "timestamp": c.timestamp,
-                    "filepath": c.filepath,
-                    "width": getattr(c, "width", None),
-                    "height": getattr(c, "height", None),
-                    "bbox": None,
-                }
-                for c in image_chunks
-            ]
-            vectors_added += add_embeddings_with_metadata(embs, meta)
-            total_chunks += len(paths)
-
-    return {"chunks_added": total_chunks, "vectors_indexed": vectors_added, "file": file.filename}
+        })
+    
+    vectors_added = store.upsert(items)
+    return {"chunks_added": len(chunks), "vectors_indexed": vectors_added, "file": file.filename}
 
 
 @app.post("/api/chat")
@@ -107,8 +93,27 @@ def query(payload: dict):
         q = payload.get("query", "")
         if not q:
             raise HTTPException(status_code=400, detail="Missing query")
+        
+        # Use new retriever and LLM modules
+        retriever = get_retriever()
+        results = retriever.retrieve(q, top_k=5)
+        
+        if not results:
+            return {"answer": "I don't have any relevant information to answer this question.", "sources": []}
+        
+        # Load LLM adapter
         cfg_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config.yaml"))
-        return answer_query(cfg_path, q)
+        config = load_config(cfg_path)
+        adapter = build_adapter(config)
+        
+        # Generate answer
+        answer = generate_answer(q, results, adapter)
+        
+        # Create citations
+        citations = create_citations(results)
+        
+        return {"answer": answer, "sources": citations}
+        
     except HTTPException:
         # re-raise FastAPI HTTP errors as-is
         raise
@@ -119,63 +124,26 @@ def query(payload: dict):
 
 @app.get("/status")
 def status():
-    return index_status()
+    store = get_store()
+    return store.status()
 
 
 @app.post("/index/rebuild")
 def rebuild():
-    # Assume text embedding dimension 384 for MiniLM-L6-v2
-    return rebuild_from_db(384)
+    store = get_store()
+    store.rebuild_from_metadata()
+    return store.status()
 
 
-@app.post("/ingest/audio")
-async def ingest_audio(file: UploadFile = File(...)):
-    ensure_storage()
-    storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "storage"))
-    os.makedirs(storage_dir, exist_ok=True)
-    if not any(r.path == "/storage" for r in app.router.routes):
-        app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Missing filename")
-    dest_path = os.path.join(storage_dir, file.filename)
-    data = await file.read()
-    with open(dest_path, "wb") as f:
-        f.write(data)
-
-    # extract audio -> transcript chunks with segments stored on chunk objects
-    from .extractors import extract_audio
-    chunks = extract_audio(dest_path, file.filename)
-
-    texts = [c.content for c in chunks]
-    embs = embed_texts(texts)
-    meta = []
-    for c in chunks:
-        # find first segment overlap as a simple heuristic (timestamp string)
-        ts = None
-        segs = getattr(c, "segments", []) or []
-        if segs:
-            # use the first segment timestamp
-            s0, s1, _ = segs[0]
-            ts = f"{s0}-{s1}"
-        meta.append({
-            "content": c.content,
-            "file_name": c.file_name,
-            "file_type": c.file_type,
-            "page_number": c.page_number,
-            "timestamp": ts,
-            "filepath": c.filepath,
-        })
-
-    added = add_embeddings_with_metadata(embs, meta)
-    return {"chunks_added": len(texts), "vectors_indexed": added, "file": file.filename}
 
 
 @app.post("/search/similarity")
 async def similarity(payload: dict = None, mode: str = "text", file: UploadFile | None = None):
     k = 5
     query_emb = None
-    from .index_store import INDEX_PATH, connect_db
-    if not os.path.exists(INDEX_PATH):
+    store = get_store()
+    
+    if store.index.ntotal == 0:
         return {"results": []}
 
     if mode == "text":
@@ -183,7 +151,7 @@ async def similarity(payload: dict = None, mode: str = "text", file: UploadFile 
         k = int((payload or {}).get("k", 5))
         if not query:
             raise HTTPException(status_code=400, detail="Missing query")
-        query_emb = embed_texts([query])
+        query_emb = embed_text(query)
     elif mode == "image":
         if file is None:
             raise HTTPException(status_code=400, detail="Missing image file")
@@ -192,7 +160,7 @@ async def similarity(payload: dict = None, mode: str = "text", file: UploadFile 
         os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
         with open(tmp_path, "wb") as f:
             f.write(data)
-        query_emb = embed_image_paths([os.path.abspath(tmp_path)])
+        query_emb = embed_image(os.path.abspath(tmp_path))
         try:
             os.remove(tmp_path)
         except Exception:
@@ -204,42 +172,9 @@ async def similarity(payload: dict = None, mode: str = "text", file: UploadFile 
         k = int((payload or {}).get("k", 5))
         if not query:
             raise HTTPException(status_code=400, detail="Missing query for cross mode")
-        query_emb = embed_texts([query])
+        query_emb = embed_text(query)
 
-    index = faiss.read_index(INDEX_PATH)
-    D, I = index.search(query_emb, k)
-    ids = I[0].tolist()
-    scores = D[0].tolist()
-    placeholders = ",".join(["?"] * len(ids)) if ids else ""
-    results = []
-    if ids:
-        conn = connect_db()
-        cur = conn.cursor()
-        cur.execute(
-            f"SELECT vector_id, content, file_name, file_type, page_number, timestamp, filepath, width, height, bbox FROM vectors WHERE vector_id IN ({placeholders})",
-            ids,
-        )
-        metas = cur.fetchall()
-        conn.close()
-        meta_map = {row[0]: row for row in metas}
-        for vid, score in zip(ids, scores):
-            row = meta_map.get(vid)
-            if row:
-                results.append(
-                    {
-                        "vector_id": row[0],
-                        "content": row[1],
-                        "file_name": row[2],
-                        "file_type": row[3],
-                        "page_number": row[4],
-                        "timestamp": row[5],
-                        "filepath": row[6],
-                        "width": row[7],
-                        "height": row[8],
-                        "bbox": row[9],
-                        "score": float(score),
-                    }
-                )
+    results = store.search(query_emb, k)
     return {"results": results}
 
 

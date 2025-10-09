@@ -21,4 +21,14 @@ llama-cpp-python==0.2.90
 # open-clip-torch already included for image embeddings
 reportlab==4.2.2
 
+# Gradio for UI
+gradio==4.44.0
+
+# Optional OCR
+# pytesseract
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
 
