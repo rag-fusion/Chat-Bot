@@ -13,7 +13,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
-from app.ui.gradio_app import launch_gradio_app
+from app.ui.simple_gradio import launch_simple_app
 from app.main import app as fastapi_app
 import uvicorn
 
@@ -32,7 +32,7 @@ def main():
     
     if args.interface == "gradio":
         print(f"Starting Gradio interface on http://{args.host}:{args.port}")
-        launch_gradio_app(port=args.port, config_path=args.config)
+        launch_simple_app(port=args.port, config_path=args.config)
     else:
         print(f"Starting FastAPI interface on http://{args.host}:{args.port}")
         uvicorn.run(fastapi_app, host=args.host, port=args.port)
