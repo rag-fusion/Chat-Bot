@@ -1,0 +1,86 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v
+
+      - name: Test imports
+        run: |
+          cd backend
+          python -c "import app; print('App imports successfully')"
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          cd backend
+          docker build -t offline-multimodal-rag:latest -f scripts/docker/Dockerfile .
+
+      - name: Test Docker image
+        run: |
+          docker run --rm offline-multimodal-rag:latest python -c "import app; print('Docker image works')"
+
+      - name: Create release tarball
+        run: |
+          cd backend
+          chmod +x scripts/build_release.sh
+          ./scripts/build_release.sh
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-assets
+          path: |
+            backend/offline-multimodal-rag-*.tar.gz
+            backend/release/
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            backend/offline-multimodal-rag-*.tar.gz
+            backend/release/install.sh
+            backend/release/quickstart.md
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
