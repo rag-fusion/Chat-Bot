@@ -1,7 +1,7 @@
 import os
 from typing import List
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -24,6 +24,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def root():
+    """Root endpoint with API information."""
+    return {
+        "message": "RAG Offline Chatbot API",
+        "version": "0.1.0",
+        "endpoints": {
+            "health": "/health",
+            "upload": "/ingest",
+            "query": "/query",
+            "search": "/search/similarity",
+            "status": "/status",
+            "docs": "/docs"
+        },
+        "frontend": "http://localhost:5173"
+    }
 
 
 @app.get("/health")
@@ -138,7 +156,7 @@ def rebuild():
 
 
 @app.post("/search/similarity")
-async def similarity(payload: dict = None, mode: str = "text", file: UploadFile | None = None):
+async def similarity(request: Request, mode: str = "text", file: UploadFile | None = None):
     k = 5
     query_emb = None
     store = get_store()
@@ -146,9 +164,12 @@ async def similarity(payload: dict = None, mode: str = "text", file: UploadFile 
     if store.index.ntotal == 0:
         return {"results": []}
 
+    # Parse JSON body
+    body = await request.json()
+    
     if mode == "text":
-        query = (payload or {}).get("query", "")
-        k = int((payload or {}).get("k", 5))
+        query = body.get("query", "")
+        k = int(body.get("k", 5))
         if not query:
             raise HTTPException(status_code=400, detail="Missing query")
         query_emb = embed_text(query)
@@ -165,11 +186,11 @@ async def similarity(payload: dict = None, mode: str = "text", file: UploadFile 
             os.remove(tmp_path)
         except Exception:
             pass
-        k = int((payload or {}).get("k", 5))
+        k = int(body.get("k", 5))
     else:
         # cross-modal defaults to text embedding of query string
-        query = (payload or {}).get("query", "")
-        k = int((payload or {}).get("k", 5))
+        query = body.get("query", "")
+        k = int(body.get("k", 5))
         if not query:
             raise HTTPException(status_code=400, detail="Missing query for cross mode")
         query_emb = embed_text(query)

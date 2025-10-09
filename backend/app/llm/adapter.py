@@ -78,6 +78,15 @@ def build_adapter(cfg: dict) -> LLMAdapter:
     backend = (cfg.get("model_backend") or "mistral").lower()
     path = cfg.get("model_path")
     
+    # Resolve relative paths to absolute paths
+    if path and not os.path.isabs(path):
+        # Get the directory where this file is located (backend/app/llm/)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up two levels to backend/ directory
+        backend_dir = os.path.dirname(os.path.dirname(current_dir))
+        # Resolve the model path relative to backend directory
+        path = os.path.abspath(os.path.join(backend_dir, path))
+    
     if backend == "gpt4all":
         return GPT4AllAdapter(path)
     elif backend == "llama_cpp":
