@@ -54,26 +54,107 @@ backend/models/
 
 ## Model Downloads
 
-### Text Embeddings
+### 1. Text Embeddings (all-MiniLM-L6-v2)
 
+**Purpose**: Convert text to 384-dimensional vectors for similarity search
+
+**Download Options**:
+
+**Option A - Automatic (Recommended)**:
 ```bash
-# Download all-MiniLM-L6-v2
+python scripts/download_models.py
+```
+
+**Option B - Manual Python**:
+```bash
 python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2').save('./models/embeddings/all-MiniLM-L6-v2')"
 ```
 
-### Image Embeddings
+**Option C - Direct Download**:
+- **Hugging Face**: https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+- **Size**: ~90MB
+- **Files needed**: All files from the repository
 
+### 2. Image Embeddings (CLIP ViT-B-32)
+
+**Purpose**: Convert images to 512-dimensional vectors for multimodal search
+
+**Download Options**:
+
+**Option A - Automatic (Recommended)**:
 ```bash
-# Download CLIP model
+python scripts/download_models.py
+```
+
+**Option B - Manual Python**:
+```bash
 python -c "import clip; clip.load('ViT-B/32', download_root='./models/clip')"
 ```
 
-### Audio Processing
+**Option C - Direct Download**:
+- **Hugging Face**: https://huggingface.co/openai/clip-vit-base-patch32
+- **Size**: ~580MB
+- **Files needed**: `pytorch_model.bin` and `config.json`
 
+### 3. Audio Processing (Whisper Small)
+
+**Purpose**: Transcribe audio files (MP3, WAV, etc.) to text
+
+**Download Options**:
+
+**Option A - Automatic (Recommended)**:
 ```bash
-# Download Whisper model
+python scripts/download_models.py
+```
+
+**Option B - Manual Python**:
+```bash
 python -c "import whisper; whisper.load_model('small', download_root='./models/whisper')"
 ```
+
+**Option C - Direct Download**:
+- **Hugging Face**: https://huggingface.co/openai/whisper-small
+- **Size**: ~244MB
+- **Files needed**: `pytorch_model.bin` and `config.json`
+
+### 4. Large Language Model (Mistral-7B-Instruct)
+
+**Purpose**: Generate responses to user queries using local LLM
+
+**Download Options**:
+
+**Option A - Direct Download (Recommended)**:
+- **Hugging Face**: https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+- **File**: `mistral-7b-instruct-v0.2.Q4_K_M.gguf`
+- **Size**: ~4.1GB
+- **Place in**: `backend/models/llm/`
+
+**Option B - Alternative Models**:
+- **Llama 2 7B**: https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF
+- **CodeLlama 7B**: https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGUF
+- **Phi-3 Mini**: https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf
+
+**Option C - Using wget/curl**:
+```bash
+# Create directory
+mkdir -p backend/models/llm
+
+# Download Mistral (4.1GB)
+wget https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf -O backend/models/llm/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+```
+
+### Quick Setup (All Models)
+
+**One-command setup** (requires internet):
+```bash
+# Download all models automatically
+python scripts/download_models.py
+
+# Download LLM manually (4.1GB)
+wget https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf -O backend/models/llm/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+```
+
+**Total disk space needed**: ~5GB
 
 ## Configuration
 
