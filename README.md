@@ -1,245 +1,144 @@
-# Offline Multimodal RAG System
+## RAG Offline Chatbot
 
-A fully offline Retrieval-Augmented Generation (RAG) system that supports multiple modalities including PDF, DOCX, images, and audio files. All processing happens locally without requiring internet connectivity.
+Fully offline Retrieval-Augmented Generation (RAG) with text, image, and audio support. Runs locally with a simple UI (Gradio) and a FastAPI backend. Optional React frontend included.
 
-## Features
+### What you get
+- **Offline-first**: after setup, no internet needed
+- **Multimodal**: PDF/DOCX/TXT/MD, images, audio
+- **Local models**: sentence-transformers, CLIP, Whisper, and a local LLM (GGUF)
+- **Two ways to use**: Web UI or REST API
 
-- **Fully Offline**: No internet connection required after initial setup
-- **Multimodal Support**: PDF, DOCX, images, and audio files
-- **Local LLM Integration**: Supports GPT4All, Llama.cpp, and Mistral
-- **Cross-Modal Search**: Find related content across different file types
-- **Dual Interface**: Both Gradio web UI and FastAPI backend
-- **Docker Support**: Easy deployment with Docker containers
-- **Citation Support**: Proper source attribution and linking
+---
 
-## Quick Start
+### 1) Fork & clone
 
-### Option 1: Docker (Recommended)
-
-1. **Download the release**:
-
-   ```bash
-   # Download from GitHub Releases
-   wget https://github.com/your-repo/offline-multimodal-rag/releases/latest/download/offline-multimodal-rag-0.1.0.tar.gz
-   ```
-
-2. **Load and run**:
-
-   ```bash
-   docker load < offline-multimodal-rag-0.1.0.tar.gz
-   docker run -p 7860:7860 offline-multimodal-rag:0.1.0
-   ```
-
-3. **Access the interface**:
-   Open http://localhost:7860 in your browser
-
-### Option 2: Native Installation
-
-1. **Clone the repository**:
-
-   ```bash
-   git clone https://github.com/your-repo/offline-multimodal-rag.git
-   cd offline-multimodal-rag
-   ```
-
-2. **Install dependencies**:
-
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-3. **Run the application**:
-
-   ```bash
-   # Gradio interface (default)
-   python main.py --interface gradio --port 7860
-
-   # FastAPI backend only
-   python main.py --interface fastapi --port 8000
-   ```
-
-## System Requirements
-
-- **Minimum**: 8GB RAM, 20GB disk space
-- **Recommended**: 16GB RAM, 50GB disk space, GPU for faster inference
-- **OS**: Windows, macOS, or Linux
-- **Python**: 3.11+ (for native installation)
-- **Docker**: Latest version (for Docker installation)
-
-## Architecture
-
-The system is organized into modular components:
-
-```
-app/
-├── ingestion/          # Document processing (PDF, DOCX, images, audio)
-├── embeddings/         # Embedding generation (text and image)
-├── vector_store/       # FAISS vector database
-├── retriever/          # Search and reranking
-├── llm/               # Local LLM adapters
-├── ui/                # Gradio web interface
-└── utils/             # Cross-modal linking and citations
+```bash
+git fork <this repo>  # on GitHub, then
+git clone https://github.com/<your-username>/rag-offline-chatbot.git
+cd rag-offline-chatbot
 ```
 
-## Configuration
+### 2) Requirements
+- Python 3.11+
+- Node.js 18+ (only if using the React frontend)
+- Windows, macOS, or Linux
 
-Edit `backend/config.yaml` to configure the system:
+### 3) Setup (Backend)
 
+Windows PowerShell:
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate
+pip install -r backend\requirements.txt
+```
+
+macOS/Linux:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+```
+
+Optional: download models automatically (first run needs internet):
+```bash
+python scripts/download_models.py
+```
+
+The default config is in `backend/config.yaml`:
 ```yaml
-model_backend: llama_cpp # options: gpt4all | llama_cpp | mistral
-model_path: ./models/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+model_backend: llama_cpp
+model_path: ./models/llm/mistral-7b-instruct-v0.2.Q4_K_M.gguf
 top_k: 5
 max_tokens: 512
 temperature: 0.2
 ```
+Place your GGUF LLM at `backend/models/llm/` or update `model_path`.
 
-## Usage
+### 4) Run
 
-### Web Interface (Gradio)
-
-1. **Upload Documents**: Use the upload tab to add PDF, DOCX, images, or audio files
-2. **Ask Questions**: Use the query tab to ask questions about your documents
-3. **View Sources**: See citations and source references for each answer
-
-### API Interface (FastAPI)
-
-```python
-import requests
-
-# Upload a document
-with open("document.pdf", "rb") as f:
-    response = requests.post("http://localhost:8000/ingest", files={"file": f})
-
-# Query the system
-response = requests.post("http://localhost:8000/query",
-                        json={"query": "What is the main topic?"})
-result = response.json()
-print(result["answer"])
-```
-
-### Command Line Interface
-
+Gradio UI (recommended for first run):
 ```bash
-# Ingest all files from a directory
-python scripts/ingest_all.py --data-dir ./documents --index ./storage/faiss.index
-
-# Run tests
-python -m pytest tests/ -v
+python main.py --interface gradio --port 7860
 ```
+Open `http://localhost:7860`.
 
-## Supported File Types
-
-- **Documents**: PDF, DOCX, TXT, MD
-- **Images**: PNG, JPG, JPEG, GIF, BMP, WEBP
-- **Audio**: MP3, WAV, M4A, FLAC, OGG
-
-## Model Requirements
-
-### Text Embeddings
-
-- **Default**: `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions)
-- **Offline**: Download model files locally and set `TEXT_MODEL_PATH` environment variable
-
-### Image Embeddings
-
-- **Default**: OpenCLIP ViT-B-32
-- **Offline**: Download model weights and set `CLIP_MODEL_PATH` environment variable
-
-### LLM Models
-
-- **GPT4All**: Download from [GPT4All](https://gpt4all.io/)
-- **Llama.cpp**: Download GGUF format models
-- **Mistral**: Use provided Mistral-7B model or download others
-
-## Development
-
-### Project Structure
-
-```
-offline-multimodal-rag/
-├── backend/
-│   ├── app/                 # Main application code
-│   ├── scripts/            # Build and utility scripts
-│   ├── tests/              # Test suite
-│   ├── requirements.txt    # Python dependencies
-│   └── config.yaml         # Configuration file
-├── frontend/               # React frontend (optional)
-├── .github/workflows/      # CI/CD workflows
-└── main.py                # Entry point
-```
-
-### Running Tests
-
+FastAPI API server:
 ```bash
-cd backend
-python -m pytest tests/ -v
+python main.py --interface fastapi --port 8000
 ```
+Docs at `http://localhost:8000/docs`.
 
-### Building Docker Image
-
+Frontend (optional React app):
 ```bash
-cd backend
-docker build -t offline-multimodal-rag:latest -f scripts/docker/Dockerfile .
+cd frontend
+npm install
+npm run dev
+# open http://localhost:5173
 ```
 
-### Creating Release
+### 5) Docker (optional)
 
+Using Compose (backend + vite preview):
 ```bash
-cd backend
-chmod +x scripts/build_release.sh
-./scripts/build_release.sh 0.1.0
+docker compose up --build
+# Backend on 8000, frontend on 5173
 ```
+Model folders on the host are mounted from `./backend/models`.
 
-## Troubleshooting
+---
 
-### Common Issues
+### Use it
 
-1. **Out of Memory**: Reduce model size or increase system RAM
-2. **Slow Inference**: Use GPU acceleration with `--gpus all` in Docker
-3. **Import Errors**: Ensure all dependencies are installed correctly
-4. **Model Download**: Set offline environment variables for local models
+- Web UI: upload files, then ask a question
+- REST API examples:
 
-### Environment Variables
-
+Upload a file:
 ```bash
-# Offline mode
-export TRANSFORMERS_OFFLINE=1
-export HF_HUB_OFFLINE=1
-
-# Model paths
-export TEXT_MODEL_PATH=/path/to/local/text/model
-export CLIP_MODEL_PATH=/path/to/local/clip/model
-
-# Whisper (for audio)
-export WHISPER_CPP_BIN=/path/to/whisper/main
-export WHISPER_CPP_MODEL=/path/to/whisper/model.bin
+curl -F "file=@document.pdf" http://localhost:8000/ingest
 ```
 
-## Contributing
+Ask a question:
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What is the main topic?"}'
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
+Rebuild index (if metadata present):
+```bash
+curl -X POST http://localhost:8000/index/rebuild
+```
 
-## License
+Status:
+```bash
+curl http://localhost:8000/status
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+---
 
-## Acknowledgments
+### Project structure (short)
+```
+backend/
+  app/              # API, ingestion, embeddings, retriever, vector store
+  models/           # llm/, embeddings/, clip/, whisper/
+  storage/          # faiss index + metadata
+  config.yaml
+frontend/           # optional React UI (vite)
+main.py             # entrypoint (gradio or fastapi)
+cli.py              # interactive CLI
+```
 
-- [FAISS](https://github.com/facebookresearch/faiss) for vector search
-- [Sentence Transformers](https://www.sbert.net/) for text embeddings
-- [OpenCLIP](https://github.com/mlfoundations/open_clip) for image embeddings
-- [Gradio](https://gradio.app/) for the web interface
-- [FastAPI](https://fastapi.tiangolo.com/) for the API backend
+### Troubleshooting
+- "FAISS not found" on Windows: ensure `faiss-cpu` installed from `requirements.txt` inside venv
+- Torch/CPU slow: try a smaller GGUF or enable CUDA if available
+- Port already in use: change `--port` or stop the conflicting app
+- No answers: check you ingested files and that `backend/storage` is writable
+- Model not found: verify `backend/config.yaml` `model_path`
 
-## Support
+### Contributing
+1. Fork → create branch → commit
+2. Run tests: `pytest -v` (inside venv)
+3. Open a PR
 
-For issues and questions:
-
-- Create an issue on GitHub
-- Check the troubleshooting section
-- Review the test suite for usage examples
+### License
+MIT — see `LICENSE`
