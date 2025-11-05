@@ -12,6 +12,7 @@ from ..vector_store import get_store
 from ..retriever import get_retriever
 from ..llm import build_adapter, load_config, generate_answer
 from ..utils import create_citations, format_source_reference
+from ..utils.file_server import save_uploaded_file
 
 
 class GradioApp:
@@ -44,8 +45,11 @@ class GradioApp:
                 tmp_file.write(file.read())
                 tmp_path = tmp_file.name
             
+            # Save to permanent storage
+            stored_path = save_uploaded_file(tmp_path, file.name)
+            
             # Extract content
-            chunks = extract_any(tmp_path, os.path.basename(file.name), "")
+            chunks = extract_any(tmp_path, os.path.basename(file.name), stored_path)
             
             if not chunks:
                 return f"No content extracted from {os.path.basename(file.name)}"
