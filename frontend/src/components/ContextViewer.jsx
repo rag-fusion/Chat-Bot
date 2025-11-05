@@ -24,7 +24,16 @@ function TextResult({ result, onOpen }) {
   return (
     <div
       className="group flex cursor-pointer gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent"
-      onClick={() => onOpen(result)}
+      onClick={() => {
+        if (result?.url) {
+          window.open(
+            result.url.startsWith("http") ? result.url : `http://localhost:8000${result.url}`,
+            "_blank"
+          );
+        } else {
+          onOpen(result);
+        }
+      }}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
         <FileText className="h-5 w-5 text-muted-foreground" />
@@ -49,7 +58,16 @@ function ImageResult({ result, onOpen }) {
   return (
     <div
       className="group relative cursor-pointer overflow-hidden rounded-lg border bg-card transition-colors hover:bg-accent"
-      onClick={() => onOpen(result)}
+      onClick={() => {
+        if (result?.url) {
+          window.open(
+            result.url.startsWith("http") ? result.url : `http://localhost:8000${result.url}`,
+            "_blank"
+          );
+        } else {
+          onOpen(result);
+        }
+      }}
     >
       <img
         src={result.url || result.path}

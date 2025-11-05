@@ -1,16 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { FileAudio, FileText, Image as ImageIcon } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
-import "pdfjs-dist/build/pdf.worker.mjs";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.mjs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 function getFileUrl(item) {
-  return `http://localhost:8000${
-    item.filepath?.includes("/storage") ? "" : "/storage"
-  }${item.filepath?.split("storage")?.[1] ?? ""}`;
+  // Prefer direct /files URL (potentially with #page anchor) for pdf.js
+  if (item?.url) {
+    return item.url.startsWith("http")
+      ? item.url
+      : `http://localhost:8000${item.url}`;
+  }
+  // Fallback to stable /files by filename
+  const name = item.file || item.title || (item.filepath ? item.filepath.split(/[\\/]/).pop() : "");
+  if (name) return `http://localhost:8000/files/${encodeURIComponent(name)}`;
+  // Fallback to raw storage path if available
+  if (item.filepath) {
+    const tail = item.filepath.split(/storage[\\/]/i)[1] || item.filepath.split(/[\\/]/).pop() || "";
+    return `http://localhost:8000/storage/${tail}`;
+  }
+  return "";
 }
 
 function AudioPlayer({ url, timestamp }) {
@@ -64,6 +75,7 @@ function AudioPlayer({ url, timestamp }) {
 
 function PdfViewer({ url, pageNumber = 1 }) {
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -91,6 +103,7 @@ function PdfViewer({ url, pageNumber = 1 }) {
         }).promise;
       } catch (error) {
         console.error("Error rendering PDF:", error);
+        setFailed(true);
       } finally {
         setLoading(false);
       }
@@ -103,6 +116,11 @@ function PdfViewer({ url, pageNumber = 1 }) {
         <div className="flex items-center gap-2 text-muted-foreground">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
           <span>Loading PDF...</span>
+        </div>
+      ) : failed ? (
+        <div className="w-full p-4 text-center text-sm text-muted-foreground">
+          <p>PDF preview failed. You can open the file directly:</p>
+          <a href={url} target="_blank" rel="noreferrer" className="text-primary underline">Open PDF</a>
         </div>
       ) : (
         <canvas ref={canvasRef} className="max-h-[70vh] rounded" />
@@ -133,6 +151,9 @@ export default function SourceModal({ item, onClose }) {
             <DialogTitle className="text-xl">
               {item.title || item.file}
             </DialogTitle>
+            <DialogDescription>
+              Source preview and extracted content
+            </DialogDescription>
             {item.type !== "image" && (
               <p className="mt-1 text-sm text-muted-foreground">
                 {item.type === "audio"
@@ -155,12 +176,34 @@ export default function SourceModal({ item, onClose }) {
           ) : item.type === "pdf" ? (
             <PdfViewer url={fileUrl} pageNumber={item.page || 1} />
           ) : (
-            <div className="rounded-lg border bg-muted p-4">
-              <pre className="whitespace-pre-wrap text-sm">{item.text}</pre>
-            </div>
+            <TextFallback url={fileUrl} initialText={item.text} />
           )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TextFallback({ url, initialText }) {
+  const [text, setText] = useState(initialText || "");
+  useEffect(() => {
+    if (!text && url) {
+      (async () => {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const t = await res.text();
+            setText(t);
+          }
+        } catch (e) {
+          // ignore
+        }
+      })();
+    }
+  }, [url, text]);
+  return (
+    <div className="rounded-lg border bg-muted p-4">
+      <pre className="whitespace-pre-wrap text-sm">{text || "No text available."}</pre>
+    </div>
   );
 }

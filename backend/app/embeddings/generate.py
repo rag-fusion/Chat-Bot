@@ -22,11 +22,31 @@ def get_text_model() -> SentenceTransformer:
     """Get or initialize text embedding model."""
     global _text_model
     if _text_model is None:
-        # Try to load from local path first, fallback to model name
-        local_path = os.getenv("TEXT_MODEL_PATH", "sentence-transformers/all-MiniLM-L6-v2")
-        if os.path.exists(local_path):
-            _text_model = SentenceTransformer(local_path)
-        else:
+        # Prefer fully-offline local model directory
+        # 1) Explicit env override
+        env_path = os.getenv("TEXT_MODEL_PATH")
+        # 2) Repo local model path: backend/models/embeddings/all-MiniLM-L6-v2
+        repo_local = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "models", "embeddings", "all-MiniLM-L6-v2")
+        )
+        # 3) Also try project root relative variant: backend/../backend/models/embeddings/all-MiniLM-L6-v2
+        alt_repo_local = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "models", "embeddings", "all-MiniLM-L6-v2")
+        )
+
+        candidate_paths = [p for p in [env_path, repo_local, alt_repo_local] if p]
+
+        model_loaded = False
+        for path in candidate_paths:
+            if os.path.exists(path):
+                # Force local-only load when a directory is given
+                _text_model = SentenceTransformer(path)
+                model_loaded = True
+                break
+
+        if not model_loaded:
+            # Last resort: try the model name (could use HF cache if available)
+            # Users should set HF_HUB_OFFLINE=1 in offline environments
             _text_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     return _text_model
 
@@ -36,9 +56,16 @@ def get_clip() -> tuple[torch.nn.Module, any]:
     global _clip_model, _clip_preprocess
     if _clip_model is None:
         # Try to load from local path first
-        local_path = os.getenv("CLIP_MODEL_PATH")
-        if local_path and os.path.exists(local_path):
-            # Load from local checkpoint
+        env_path = os.getenv("CLIP_MODEL_PATH")
+        repo_local = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "models", "clip", "ViT-B-32.pt")
+        )
+        alt_repo_local = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "models", "clip", "ViT-B-32.pt")
+        )
+        local_path = next((p for p in [env_path, repo_local, alt_repo_local] if p and os.path.exists(p)), None)
+
+        if local_path:
             model, _, preprocess = open_clip.create_model_and_transforms(
                 "ViT-B-32", pretrained=False
             )

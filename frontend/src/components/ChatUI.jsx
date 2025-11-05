@@ -45,7 +45,19 @@ function ChatMessage({ role, content, sources = [], onOpenSource }) {
                   <CitationNumber
                     key={i}
                     number={i + 1}
-                    onClick={() => onOpenSource?.(source)}
+                    onClick={() => {
+                      // Prefer direct URL when available for instant open
+                      if (source?.url) {
+                        window.open(
+                          source.url.startsWith("http")
+                            ? source.url
+                            : `http://localhost:8000${source.url}`,
+                          "_blank"
+                        );
+                      } else {
+                        onOpenSource?.(source);
+                      }
+                    }}
                   />
                 ))}
               </span>
