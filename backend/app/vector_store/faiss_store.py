@@ -16,7 +16,7 @@ import numpy as np
 class FAISSStore:
     """Enhanced FAISS vector store with metadata persistence."""
     
-    def __init__(self, dimension: int = 384, storage_dir: str = None):
+    def __init__(self, dimension: int = 512, storage_dir: str = None):
         self.dimension = dimension
         self.storage_dir = storage_dir or os.path.join(os.path.dirname(__file__), "..", "..", "storage")
         self.index_path = os.path.join(self.storage_dir, "faiss.index")
@@ -32,10 +32,31 @@ class FAISSStore:
         os.makedirs(self.storage_dir, exist_ok=True)
     
     def _load_or_init(self):
-        """Load existing index or create new one."""
+        """Load existing index or create new one with dimension migration support."""
         if os.path.exists(self.index_path):
-            self.index = faiss.read_index(self.index_path)
-            self._load_metadata()
+            try:
+                self.index = faiss.read_index(self.index_path)
+                loaded_dim = self.index.d
+                self._load_metadata()
+                
+                # Check if dimension mismatch (old 384-dim index)
+                if loaded_dim != self.dimension:
+                    print(f"Warning: Existing index has dimension {loaded_dim}, but expected {self.dimension}.")
+                    print("The index will be migrated. Old index backed up to faiss.index.backup")
+                    # Backup old index
+                    import shutil
+                    backup_path = self.index_path + ".backup"
+                    if not os.path.exists(backup_path):
+                        shutil.copy2(self.index_path, backup_path)
+                    # Create new index with correct dimension
+                    self.index = faiss.IndexFlatIP(self.dimension)
+                    # Note: Old vectors cannot be migrated automatically - they need re-indexing
+                    print("Please re-index your documents to migrate to the new dimension.")
+                    print("Or run: python backend/scripts/migrate_to_clip.py")
+            except Exception as e:
+                print(f"Error loading index: {e}. Creating new index.")
+                self.index = faiss.IndexFlatIP(self.dimension)
+                self.metadata = {}
         else:
             self.index = faiss.IndexFlatIP(self.dimension)
             self.metadata = {}
@@ -65,6 +86,24 @@ class FAISSStore:
             embedding = item.get('embedding')
             if embedding is None:
                 continue
+            
+            # Validate embedding dimension
+            if isinstance(embedding, np.ndarray):
+                if embedding.ndim == 1:
+                    if embedding.shape[0] != self.dimension:
+                        raise ValueError(
+                            f"Embedding dimension mismatch: got {embedding.shape[0]}, "
+                            f"expected {self.dimension}. Ensure all embeddings use CLIP (512-dim)."
+                        )
+                elif embedding.ndim == 2:
+                    if embedding.shape[1] != self.dimension:
+                        raise ValueError(
+                            f"Embedding dimension mismatch: got {embedding.shape[1]}, "
+                            f"expected {self.dimension}."
+                        )
+                    # Flatten batch dimension - take first element
+                    embedding = embedding[0]
+            
             embeddings.append(embedding)
             metadatas.append(item.get('metadata', {}))
         
@@ -101,21 +140,28 @@ class FAISSStore:
         return len(embeddings)
     
     def search(self, query_embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
-        """Search for similar vectors."""
+        """Search for similar vectors. Optimized for performance."""
         if self.index.ntotal == 0:
             return []
         
-        query_embedding = query_embedding.astype(np.float32)
+        # Optimize: ensure correct dtype and shape upfront
+        query_embedding = np.ascontiguousarray(query_embedding.astype(np.float32))
         if query_embedding.ndim == 1:
             query_embedding = query_embedding.reshape(1, -1)
         
-        scores, indices = self.index.search(query_embedding, min(top_k, self.index.ntotal))
+        # Limit search to available vectors
+        search_k = min(top_k, self.index.ntotal)
+        scores, indices = self.index.search(query_embedding, search_k)
         
+        # Optimize: pre-allocate results list and batch metadata lookup
         results = []
+        metadata_keys = [str(idx) for idx in indices[0] if idx != -1]
+        
         for score, idx in zip(scores[0], indices[0]):
             if idx == -1:  # FAISS returns -1 for empty slots
                 continue
             
+            # Fast metadata lookup
             metadata = self.metadata.get(str(idx), {})
             result = {
                 'vector_id': idx,

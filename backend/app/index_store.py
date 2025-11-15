@@ -116,9 +116,9 @@ def rebuild_from_db(dim: int) -> dict:
         return {"vectors": 0}
     # Embedding requires text; images should have captions already stored in content
     texts = [r[1] or "" for r in rows]
-    from .embeddings import embed_texts
+    from .embeddings import embed_text  # Use embed_text (now CLIP-based, 512-dim)
 
-    embs = embed_texts(texts)
+    embs = embed_text(texts)  # Returns 512-dim embeddings
     index = faiss.IndexFlatIP(embs.shape[1])
     index.add(embs)
     save_index(index)

@@ -4,7 +4,7 @@ import os
 import yaml
 import faiss
 from typing import List, Dict
-from .embeddings import embed_texts
+from .embeddings import embed_text  # Use unified CLIP embeddings (512-dim)
 from .index_store import INDEX_PATH, connect_db
 from .adapters.base import LLMAdapter
 from .adapters.gpt4all_adapter import GPT4AllAdapter
@@ -31,7 +31,7 @@ def build_adapter(cfg: dict) -> LLMAdapter:
 def similarity_search(query: str, k: int) -> List[Dict]:
     if not os.path.exists(INDEX_PATH):
         return []
-    q = embed_texts([query])
+    q = embed_text(query)  # Now returns 512-dim CLIP embeddings
     index = faiss.read_index(INDEX_PATH)
     D, I = index.search(q, k)
     ids = I[0].tolist()

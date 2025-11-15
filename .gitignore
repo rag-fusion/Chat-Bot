@@ -1,33 +1,164 @@
+# =========================
+# .gitignore - cleaned
+# - deduplicated
+# - ignores ML model weights, dataset files, node modules,
+#   python virtual envs, editor & OS files
+# =========================
+
+# -------------------------
+# OS / System
+# -------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+Icon?
+
+# -------------------------
+# Logs, temp, caches
+# -------------------------
+*.log
+logs/
+tmp/
+temp/
+.cache/
+.local/
+
+# -------------------------
 # Python
+# -------------------------
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Packaging / build artifacts
+build/
+dist/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+
+# Virtual environments
 .venv/
 venv/
+env/
+ENV/
+backend/.venv/
+
+# Python bytecode / misc
+*.pyc
+*.pyo
+*.pyd
+
+# -------------------------
+# Node / Frontend
+# -------------------------
+node_modules/
+**/node_modules/
 dist/
 build/
-.coverage
-
-# Node / Frontend
-node_modules/
+frontend/dist/
+frontend/build/
+.next/
 .parcel-cache/
 .turbo/
-.next/
-dist/
-build/
-*.log
+out/
 
-# Env & Editor
+# Keep lockfiles tracked (package-lock.json, yarn.lock, pnpm-lock.yaml)
+
+# -------------------------
+# ML / AI model weights (ignore everywhere)
+# -------------------------
+**/*.pt
+**/*.pth
+**/*.safetensors
+**/*.onnx
+**/*.bin
+**/*.gguf
+**/*.ckpt
+**/*.h5
+
+# -------------------------
+# Datasets & large data files
+# -------------------------
+data/
+datasets/
+storage/
+raw_data/
+processed_data/
+
+**/*.csv
+**/*.tsv
+**/*.jsonl
+**/*.npy
+**/*.npz
+**/*.pkl
+**/*.pickle
+**/*.parquet
+**/*.h5
+
+# Archives
+**/*.zip
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+**/*.tar.bz2
+**/*.7z
+
+# Images
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/*.bmp
+**/*.tif
+**/*.tiff
+**/*.webp
+**/*.gif
+
+# Audio
+**/*.wav
+**/*.mp3
+**/*.m4a
+**/*.flac
+**/*.aac
+**/*.ogg
+
+# Video
+**/*.mp4
+**/*.mov
+**/*.avi
+**/*.mkv
+**/*.webm
+
+# Indexes / DBs
+*.index
+faiss.index
+*.idx
+*.db
+*.sqlite
+
+# -------------------------
+# Editor / IDE
+# -------------------------
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# -------------------------
+# Docker / local env overrides
+# -------------------------
+docker-compose.override.yml
 .env
 .env.*
+.env.local
+.env.*.local
+
+# -------------------------
+# Misc
+# -------------------------
 .DS_Store
-.idea/
-.vscode/
 
-
-# Ignore heavy model files
-backend/models/**/*.pt
-backend/models/**/*.safetensors
-
-backend/.venv/
-backend/models/
