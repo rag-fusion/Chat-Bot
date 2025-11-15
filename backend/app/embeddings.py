@@ -1,52 +1,48 @@
+"""
+Legacy embeddings module - DEPRECATED.
+
+This module is kept for backward compatibility but now delegates to the new
+CLIP-based embeddings in embeddings/generate.py.
+
+All functions now use the unified 512-dim CLIP embedding space.
+"""
+
 from __future__ import annotations
 
-import os
-from typing import List, Tuple
-
+from typing import List
 import numpy as np
-import torch
-from PIL import Image
-from sentence_transformers import SentenceTransformer
-import open_clip
+
+# Import from the new unified embeddings module (via __init__.py)
+from .embeddings import embed_text, embed_image, get_text_model as _get_text_model, get_clip as _get_clip
 
 
-_text_model: SentenceTransformer | None = None
-_clip_model: torch.nn.Module | None = None
-_clip_preprocess = None
+def get_text_model():
+    """Legacy function - now uses CLIP text encoder (512-dim)."""
+    return _get_text_model()
 
 
-def get_text_model() -> SentenceTransformer:
-    global _text_model
-    if _text_model is None:
-        _text_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-    return _text_model
-
-
-def get_clip() -> tuple[torch.nn.Module, any]:
-    global _clip_model, _clip_preprocess
-    if _clip_model is None:
-        model, _, preprocess = open_clip.create_model_and_transforms(
-            "ViT-B-32", pretrained="openai"
-        )
-        model.eval()
-        _clip_model = model
-        _clip_preprocess = preprocess
-    return _clip_model, _clip_preprocess
+def get_clip():
+    """Legacy function - now uses CLIP model (512-dim)."""
+    return _get_clip()
 
 
 def embed_texts(texts: List[str]) -> np.ndarray:
-    model = get_text_model()
-    embs = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True, batch_size=64, show_progress_bar=False)
-    return embs.astype(np.float32)
+    """
+    Legacy function for backward compatibility.
+    Now uses CLIP text encoder (512-dim) instead of sentence-transformers.
+    """
+    return embed_text(texts)
 
 
 def embed_image_paths(paths: List[str]) -> np.ndarray:
-    model, preprocess = get_clip()
-    images = [preprocess(Image.open(p).convert("RGB")) for p in paths]
-    batch = torch.stack(images)
-    with torch.no_grad():
-        feats = model.encode_image(batch)
-        feats = feats / feats.norm(dim=-1, keepdim=True)
-    return feats.cpu().numpy().astype(np.float32)
+    """
+    Legacy function for backward compatibility.
+    Uses CLIP image encoder (512-dim).
+    """
+    embeddings = []
+    for path in paths:
+        emb = embed_image(path)
+        embeddings.append(emb[0])  # Remove batch dimension
+    return np.array(embeddings)
 
 

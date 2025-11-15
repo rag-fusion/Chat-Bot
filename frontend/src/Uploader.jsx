@@ -60,11 +60,24 @@ export default function Uploader({ onUploaded }) {
         method: "POST",
         body: form,
       });
+      
+      if (!res.ok) {
+        let errorMessage = "Failed to upload file. Please try again.";
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch {
+          errorMessage = `Upload failed: ${res.status} ${res.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
       const data = await res.json();
       setStatus(`Indexed ${data.vectors_indexed} vectors from ${data.file}`);
       onUploaded?.(data);
     } catch (e) {
-      setError("Failed to upload file. Please try again.");
+      const errorMsg = e.message || "Failed to upload file. Please try again.";
+      setError(errorMsg);
       setFiles((prev) => prev.filter((f) => f !== file));
     } finally {
       setUploading(false);
@@ -77,30 +90,63 @@ export default function Uploader({ onUploaded }) {
       return upload(filesToUpload[0]);
     }
 
+    // Upload files sequentially since batch endpoint doesn't exist
     setUploading(true);
     setError("");
-    setStatus(`Uploading ${filesToUpload.length} files...`);
+    let successCount = 0;
+    let failCount = 0;
+    const failedFiles = [];
 
-    try {
-      const form = new FormData();
-      filesToUpload.forEach((f) => form.append("files", f));
-      const res = await fetch("http://localhost:8000/ingest/batch", {
-        method: "POST",
-        body: form,
-      });
-      const data = await res.json();
-      setStatus(
-        `Indexed ${data.vectors_indexed} vectors from ${
-          data.files?.length || 0
-        } files`
-      );
-      onUploaded?.(data);
-    } catch (e) {
-      setError("Failed to upload files. Please try again.");
-      setFiles((prev) => prev.filter((f) => !filesToUpload.includes(f)));
-    } finally {
-      setUploading(false);
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+      setStatus(`Uploading ${file.name} (${i + 1}/${filesToUpload.length})...`);
+
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("http://localhost:8000/ingest", {
+          method: "POST",
+          body: form,
+        });
+
+        if (!res.ok) {
+          let errorMessage = `Failed to upload ${file.name}`;
+          try {
+            const errorData = await res.json();
+            errorMessage = errorData.detail || errorData.message || errorMessage;
+          } catch {
+            errorMessage = `${file.name}: ${res.status} ${res.statusText}`;
+          }
+          throw new Error(errorMessage);
+        }
+
+        const data = await res.json();
+        successCount++;
+        onUploaded?.(data);
+      } catch (e) {
+        failCount++;
+        failedFiles.push(file);
+        const errorMsg = e.message || `Failed to upload ${file.name}`;
+        setError(`${errorMsg}${failCount > 1 ? ` (${failCount} failed)` : ""}`);
+      }
     }
+
+    // Update status with final results
+    if (failCount === 0) {
+      setStatus(`Successfully uploaded ${successCount} file${successCount > 1 ? "s" : ""}`);
+      setError("");
+    } else if (successCount > 0) {
+      setStatus(`Uploaded ${successCount} file${successCount > 1 ? "s" : ""}, ${failCount} failed`);
+    } else {
+      setError(`Failed to upload all ${filesToUpload.length} file${filesToUpload.length > 1 ? "s" : ""}`);
+    }
+
+    // Remove failed files from the list
+    if (failedFiles.length > 0) {
+      setFiles((prev) => prev.filter((f) => !failedFiles.includes(f)));
+    }
+
+    setUploading(false);
   };
 
   const removeFile = (file) => {

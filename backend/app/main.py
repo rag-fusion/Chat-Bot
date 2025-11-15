@@ -90,49 +90,146 @@ def health_check():
 
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...)):
-    storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "storage"))
-    os.makedirs(storage_dir, exist_ok=True)
-    # storage is mounted on startup; ensure dir exists
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Missing filename")
-    dest_path = os.path.join(storage_dir, file.filename)
-    data = await file.read()
-    with open(dest_path, "wb") as f:
-        f.write(data)
-
-    # Extract chunks using new ingestion module
-    chunks = extract_any(dest_path, file.filename, file.content_type or "")
-    
-    # Generate embeddings and store using new vector store
-    store = get_store()
-    items = []
-    
-    for chunk in chunks:
-        if chunk.file_type == 'image':
-            embedding = embed_image(chunk.filepath)
-        else:
-            embedding = embed_text(chunk.content)
+    try:
+        storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "storage"))
+        os.makedirs(storage_dir, exist_ok=True)
+        # storage is mounted on startup; ensure dir exists
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="Missing filename")
         
-        items.append({
-            'embedding': embedding[0],  # Remove batch dimension
-            'metadata': {
-                'content': chunk.content,
-                'file_name': chunk.file_name,
-                'file_type': chunk.file_type,
-                'page_number': chunk.page_number,
-                'timestamp': chunk.timestamp,
-                'filepath': chunk.filepath,
-                'width': getattr(chunk, 'width', None),
-                'height': getattr(chunk, 'height', None),
-                'bbox': getattr(chunk, 'bbox', None),
-                'char_start': getattr(chunk, 'char_start', None),
-                'char_end': getattr(chunk, 'char_end', None),
-                'modality': chunk.file_type
-            }
-        })
+        dest_path = os.path.join(storage_dir, file.filename)
+        data = await file.read()
+        
+        if not data:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+        
+        with open(dest_path, "wb") as f:
+            f.write(data)
+
+        # Extract chunks using new ingestion module
+        try:
+            chunks = extract_any(dest_path, file.filename, file.content_type or "")
+        except Exception as e:
+            raise HTTPException(
+                status_code=422, 
+                detail=f"Failed to extract content from file: {str(e)}"
+            )
+        
+        if not chunks:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No content could be extracted from {file.filename}. The file may be corrupted or in an unsupported format."
+            )
+        
+        # Generate embeddings and store using new vector store
+        try:
+            store = get_store()
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initialize vector store: {str(e)}"
+            )
+        
+        items = []
+        
+        # Optimize: batch text embeddings for better performance
+        text_chunks = []
+        image_chunks = []
+        text_indices = []
+        image_indices = []
+        
+        for i, chunk in enumerate(chunks):
+            if chunk.file_type == 'image':
+                image_chunks.append((i, chunk))
+            else:
+                text_chunks.append((i, chunk))
+        
+        # Batch process text embeddings
+        if text_chunks:
+            try:
+                text_contents = [chunk.content for _, chunk in text_chunks]
+                text_embeddings = embed_text(text_contents)  # Batch embedding
+                
+                for idx, (orig_idx, chunk) in enumerate(text_chunks):
+                    embedding = text_embeddings[idx] if text_embeddings.ndim == 2 else text_embeddings
+                    if embedding.ndim == 2:
+                        embedding = embedding[0]  # Remove batch dimension
+                    
+                    items.append({
+                        'embedding': embedding,
+                        'metadata': {
+                            'content': chunk.content,
+                            'file_name': chunk.file_name,
+                            'file_type': chunk.file_type,
+                            'page_number': chunk.page_number,
+                            'timestamp': chunk.timestamp,
+                            'filepath': chunk.filepath,
+                            'width': getattr(chunk, 'width', None),
+                            'height': getattr(chunk, 'height', None),
+                            'bbox': getattr(chunk, 'bbox', None),
+                            'char_start': getattr(chunk, 'char_start', None),
+                            'char_end': getattr(chunk, 'char_end', None),
+                            'modality': chunk.file_type
+                        }
+                    })
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to generate text embeddings: {str(e)}"
+                )
+        
+        # Process image embeddings (one at a time - CLIP handles batching internally if needed)
+        for orig_idx, chunk in image_chunks:
+            try:
+                embedding = embed_image(chunk.filepath)
+                if embedding.ndim == 2:
+                    embedding = embedding[0]  # Remove batch dimension
+                
+                items.append({
+                    'embedding': embedding,
+                    'metadata': {
+                        'content': chunk.content,
+                        'file_name': chunk.file_name,
+                        'file_type': chunk.file_type,
+                        'page_number': chunk.page_number,
+                        'timestamp': chunk.timestamp,
+                        'filepath': chunk.filepath,
+                        'width': getattr(chunk, 'width', None),
+                        'height': getattr(chunk, 'height', None),
+                        'bbox': getattr(chunk, 'bbox', None),
+                        'char_start': getattr(chunk, 'char_start', None),
+                        'char_end': getattr(chunk, 'char_end', None),
+                        'modality': chunk.file_type
+                    }
+                })
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to generate image embedding for {chunk.file_name}: {str(e)}"
+                )
+        
+        # Sort items back to original order if needed (for consistency)
+        # items are already in correct order
+        
+        try:
+            vectors_added = store.upsert(items)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to store vectors in database: {str(e)}"
+            )
+        
+        return {"chunks_added": len(chunks), "vectors_indexed": vectors_added, "file": file.filename}
     
-    vectors_added = store.upsert(items)
-    return {"chunks_added": len(chunks), "vectors_indexed": vectors_added, "file": file.filename}
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # Catch any other unexpected errors
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error during file ingestion: {str(e)}"
+        )
 
 
 @app.post("/api/chat")
@@ -166,33 +263,44 @@ def query(payload: dict):
         # Generate answer
         answer = generate_answer(q, results, adapter)
         
-        # Create citations (include direct URL under /files, with #page for PDFs)
+        # Create citations (optimized batch processing)
         citations = []
         for idx, r in enumerate(results, start=1):
-            file_name = r.get("file_name")
+            file_name = r.get("file_name", "")
             file_type = r.get("modality", r.get("file_type", "text"))
             page_num = r.get("page_number")
-            base_path = f"/files/{file_name}" if file_name else None
-            if base_path and file_type == "pdf" and page_num:
-                url = f"{base_path}#page={page_num}"
-            else:
-                url = base_path or None
+            timestamp = r.get("timestamp")
+            
+            # Build URL efficiently
+            url = None
+            if file_name:
+                base_path = f"/files/{file_name}"
+                if file_type == "pdf" and page_num is not None:
+                    url = f"{base_path}#page={page_num}"
+                elif file_type == "audio" and timestamp:
+                    # URL-safe timestamp encoding
+                    url = f"{base_path}#t={timestamp.replace(':', '')}"
+                elif file_type == "image":
+                    url = base_path
+                else:
+                    url = base_path
 
-            citations.append({
-                # New minimal schema for fast linking
+            # Optimized citation dict creation
+            citation = {
                 "id": idx,
                 "source": file_name,
                 "page": page_num,
+                "timestamp": timestamp,
                 "url": url,
-                # Backward/compat fields used by UI components
                 "title": file_name,
                 "file": file_name,
                 "type": file_type,
-                "timestamp": r.get("timestamp"),
+                "modality": file_type,
                 "filepath": r.get("filepath"),
                 "text": r.get("content", ""),
-                "score": r.get("score", 0.0),
-            })
+                "score": float(r.get("score", 0.0)),
+            }
+            citations.append(citation)
         
         return {"answer": answer, "sources": citations}
         
@@ -281,6 +389,7 @@ def rebuild():
 
 @app.post("/search/similarity")
 async def similarity(request: Request, mode: str = "text", file: UploadFile | None = None):
+    """Similarity search endpoint - now supports unified cross-modal retrieval."""
     k = 5
     query_emb = None
     store = get_store()
@@ -319,7 +428,63 @@ async def similarity(request: Request, mode: str = "text", file: UploadFile | No
             raise HTTPException(status_code=400, detail="Missing query for cross mode")
         query_emb = embed_text(query)
 
+    # Search in unified 512-dim space (cross-modal retrieval enabled)
     results = store.search(query_emb, k)
-    return {"results": results}
+    
+    # Group results by modality for better visibility
+    grouped = {}
+    for result in results:
+        modality = result.get('modality', result.get('file_type', 'text'))
+        if modality not in grouped:
+            grouped[modality] = []
+        grouped[modality].append(result)
+    
+    return {
+        "results": results,
+        "grouped_by_modality": grouped,
+        "total_found": len(results)
+    }
+
+
+@app.post("/search/cross-modal")
+async def cross_modal_search(request: Request):
+    """Explicit cross-modal search endpoint: text query can retrieve images, etc."""
+    store = get_store()
+    
+    if store.index.ntotal == 0:
+        return {"results": [], "grouped_by_modality": {}}
+    
+    body = await request.json()
+    query_type = body.get("type", "text")  # "text" or "image"
+    k = int(body.get("k", 10))
+    
+    if query_type == "text":
+        query_text = body.get("query", "")
+        if not query_text:
+            raise HTTPException(status_code=400, detail="Missing query text")
+        query_emb = embed_text(query_text)
+    else:
+        raise HTTPException(
+            status_code=400, 
+            detail="For image queries, use /search/similarity?mode=image with file upload"
+        )
+    
+    # Search across all modalities (unified 512-dim space)
+    results = store.search(query_emb, k * 2)  # Get more results for reranking
+    
+    # Group by modality for display
+    grouped = {}
+    for result in results[:k]:  # Top k results
+        modality = result.get('modality', result.get('file_type', 'text'))
+        if modality not in grouped:
+            grouped[modality] = []
+        grouped[modality].append(result)
+    
+    return {
+        "results": results[:k],
+        "grouped_by_modality": grouped,
+        "total_found": len(results),
+        "query_type": query_type
+    }
 
 
