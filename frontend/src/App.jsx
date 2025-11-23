@@ -69,11 +69,7 @@ function App() {
   useEffect(() => {
     if (messages.length === 0) {
       setMessages([
-        {
-          role: "assistant",
-          content:
-            "👋 Welcome to your Offline RAG Assistant!\n\nI can help you:\n• 📄 Query PDF documents\n• 🖼️ Analyze images\n• 🎵 Search audio transcripts\n• 📝 Search through text files\n\nUpload your documents to get started!",
-        },
+        
       ]);
     }
   }, []);
@@ -151,128 +147,139 @@ function App() {
     ]);
   };
 
-  return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Header dark={dark} setDark={setDark} isOnline={isOnline} />
+ return (
+  <div className="flex min-h-screen flex-col bg-background">
+    <Header dark={dark} setDark={setDark} isOnline={isOnline} />
 
-      {/* Offline Banner */}
-      {!isOnline && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2">
-          <p className="text-sm text-center text-amber-700 dark:text-amber-400">
-            🔌 Offline Mode Active - You can query already indexed documents
-          </p>
-        </div>
-      )}
-
-      {/* Mobile Navigation */}
-      <div className="fixed bottom-4 left-4 right-4 flex items-center justify-center gap-2 lg:hidden z-50">
-        <Sheet>
-          <SheetTrigger asChild>
-            <button className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-all">
-              <FileText className="w-4 h-4 mr-2" />
-              Upload Files
-            </button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[300px] sm:w-[400px]">
-            <SheetHeader>
-              <SheetTitle>Upload Documents</SheetTitle>
-            </SheetHeader>
-            <div className="mt-6">
-              <Uploader onUploaded={handleUploadComplete} />
-            </div>
-          </SheetContent>
-        </Sheet>
-
-        <Sheet>
-          <SheetTrigger asChild>
-            <button className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-all">
-              <Database className="w-4 h-4 mr-2" />
-              Context
-            </button>
-          </SheetTrigger>
-          <SheetContent className="w-[300px] sm:w-[400px]">
-            <SheetHeader>
-              <SheetTitle>Retrieved Context</SheetTitle>
-            </SheetHeader>
-            <div className="mt-6">
-              <ContextViewer results={results} onOpen={setModalItem} />
-            </div>
-          </SheetContent>
-        </Sheet>
+    {/* Offline Banner */}
+    {!isOnline && (
+      <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2">
+        <p className="text-sm text-center text-amber-700 dark:text-amber-400">
+          🔌 Offline Mode Active - You can query already indexed documents
+        </p>
       </div>
+    )}
 
-      <div className="container mx-auto flex flex-1 gap-4 p-4 pb-24 lg:pb-4">
-        {/* Left Panel - File Upload */}
-        <aside
-          className={`hidden lg:flex w-80 flex-col gap-4 transition-all duration-300 ${
-            showSidebar ? "" : "-ml-80 opacity-0"
-          }`}
-        >
-          <div className="rounded-xl border bg-card text-card-foreground shadow-lg overflow-hidden">
-            <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 p-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Document Library
-              </h3>
-              <p className="text-xs text-white/80 mt-1">
-                {indexedDocs} document(s) indexed
-              </p>
-            </div>
-            <div className="p-6">
-              <Uploader onUploaded={handleUploadComplete} />
-            </div>
+    {/* Mobile Navigation (same, convenient buttons) */}
+    <div className="fixed bottom-4 left-4 right-4 flex items-center justify-center gap-2 lg:hidden z-50">
+      <Sheet>
+        <SheetTrigger asChild>
+          <button className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-all">
+            <FileText className="w-4 h-4 mr-2" />
+            Upload Files
+          </button>
+        </SheetTrigger>
+        <SheetContent side="left" className="w-[300px] sm:w-[400px]">
+          <SheetHeader>
+            <SheetTitle>Upload Documents</SheetTitle>
+          </SheetHeader>
+          <div className="mt-6">
+            <Uploader onUploaded={handleUploadComplete} />
           </div>
-        </aside>
+        </SheetContent>
+      </Sheet>
 
-        {/* Center Panel - Chat Interface */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="rounded-xl border bg-card text-card-foreground shadow-lg h-full overflow-hidden">
-            <div className="p-6 h-full">
-              <ChatUI
-                messages={messages}
-                onSend={handleSend}
-                isTyping={isTyping}
-              />
-            </div>
+      <Sheet>
+        <SheetTrigger asChild>
+          <button className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-all">
+            <Database className="w-4 h-4 mr-2" />
+            Context
+          </button>
+        </SheetTrigger>
+        <SheetContent className="w-[300px] sm:w-[400px]">
+          <SheetHeader>
+            <SheetTitle>Retrieved Context</SheetTitle>
+          </SheetHeader>
+          <div className="mt-6">
+            <ContextViewer results={results} onOpen={setModalItem} />
           </div>
-        </div>
-
-        {/* Right Panel - Context Viewer */}
-        <aside
-          className={`hidden lg:flex w-80 flex-col gap-4 transition-all duration-300 ${
-            showSidebar ? "" : "-mr-80 opacity-0"
-          }`}
-        >
-          <div className="rounded-xl border bg-card text-card-foreground shadow-lg overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-500 to-cyan-500 p-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Database className="w-5 h-5" />
-                Retrieved Context
-              </h3>
-              <p className="text-xs text-white/80 mt-1">
-                {results.length} result(s) found
-              </p>
-            </div>
-            <div className="p-6 max-h-[calc(100vh-12rem)] overflow-y-auto">
-              <ContextViewer results={results} onOpen={setModalItem} />
-            </div>
-          </div>
-        </aside>
-      </div>
-
-      {/* Toggle Sidebar Button */}
-      <button
-        onClick={() => setShowSidebar(!showSidebar)}
-        className="hidden lg:flex fixed top-20 right-4 z-50 w-10 h-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-110 transition-transform"
-      >
-        {showSidebar ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-      </button>
-
-      {modalItem && (
-        <SourceModal item={modalItem} onClose={() => setModalItem(null)} />
-      )}
+        </SheetContent>
+      </Sheet>
     </div>
-  );
+
+    {/* Main Layout */}
+    <div className="container mx-auto flex flex-1 gap-4 p-4 pb-24 lg:pb-4 max-w-6xl">
+      {/* Left Panel - Library + Context (ChatGPT ke sidebar jaisa) */}
+      <aside
+        className={`hidden lg:flex w-80 flex-col gap-4 transition-all duration-300 ${
+          showSidebar ? "" : "-ml-80 opacity-0"
+        }`}
+      >
+        {/* Document Library */}
+        <div className="rounded-xl border bg-card text-card-foreground shadow-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 p-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Document Library
+            </h3>
+            <p className="text-xs text-white/80 mt-1">
+              {indexedDocs} document(s) indexed
+            </p>
+          </div>
+          <div className="p-6">
+            <Uploader onUploaded={handleUploadComplete} />
+          </div>
+        </div>
+
+        {/* Retrieved Context (ab left mein hi) */}
+        <div className="rounded-xl border bg-card text-card-foreground shadow-lg overflow-hidden flex-1 min-h-0">
+          <div className="bg-gradient-to-r from-blue-500 to-cyan-500 p-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Database className="w-5 h-5" />
+              Retrieved Context
+            </h3>
+            <p className="text-xs text-white/80 mt-1">
+              {results.length} result(s) found
+            </p>
+          </div>
+          <div className="p-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
+            <ContextViewer results={results} onOpen={setModalItem} />
+          </div>
+        </div>
+      </aside>
+
+      {/* Center Panel - ChatGPT style Chat Interface */}
+      <div className="flex-1 flex justify-center">
+        <div className="w-full max-w-3xl flex flex-col min-w-0">
+          <div className="rounded-xl border bg-card text-card-foreground shadow-lg h-full overflow-hidden flex flex-col">
+            {/* Optional Chat Header (ChatGPT vibe) */}
+            <div className="border-b px-6 py-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">Assistant</h2>
+                <p className="text-xs text-muted-foreground">
+                  Multimodal RAG · {isOnline ? "Online" : "Offline mode"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0">
+              <div className="p-6 h-full">
+                <ChatUI
+                  messages={messages}
+                  onSend={handleSend}
+                  isTyping={isTyping}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Toggle Sidebar Button (ab sirf left sidebar ke liye) */}
+    <button
+      onClick={() => setShowSidebar(!showSidebar)}
+      className="hidden lg:flex fixed top-20 left-4 z-50 w-10 h-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-110 transition-transform"
+    >
+      {showSidebar ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+    </button>
+
+    {modalItem && (
+      <SourceModal item={modalItem} onClose={() => setModalItem(null)} />
+    )}
+  </div>
+);
+
 }
 
 export default App;

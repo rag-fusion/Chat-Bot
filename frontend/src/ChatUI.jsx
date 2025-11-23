@@ -67,66 +67,112 @@ export default function ChatUI({ messages, onSend, isTyping = false }) {
   );
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-b from-gray-50 to-white shadow-lg dark:from-neutral-900/80 dark:to-neutral-900 dark:border-neutral-800">
-      <div
-        className="absolute inset-0 pointer-events-none opacity-60"
-        style={{
-          background:
-            "radial-gradient(600px circle at 0% 0%, rgba(139,92,246,0.08), transparent 40%), radial-gradient(600px circle at 100% 0%, rgba(236,72,153,0.06), transparent 40%)",
-        }}
-      />
-      
-      {/* Set a fixed height and enable scrolling */}
-      <div
-        ref={scrollRef}
-        className="relative p-4 sm:p-6 space-y-4 h-[60vh] min-h-[400px] max-h-[700px] overflow-y-auto"
-      >
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500 py-8 dark:text-gray-400 flex flex-col items-center justify-center h-full">
-            <div className="mx-auto h-14 w-14 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white flex items-center justify-center shadow-lg mb-4 animate-[float_6s_ease-in-out_infinite]">
-              A
-            </div>
-            <p className="text-lg font-medium">Chat with your Documents</p>
-            <p className="text-sm">
-              Upload files using the box above to get started.
-            </p>
+  <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border bg-background/95 shadow-lg dark:bg-neutral-900/90 dark:border-neutral-800">
+    {/* Messages area */}
+    <div
+      ref={scrollRef}
+      className="relative flex-1 px-4 sm:px-6 py-4 space-y-4 h-[60vh] min-h-[400px] max-h-[700px] overflow-y-auto"
+    >
+      {messages.length === 0 && (
+        <div className="flex h-full flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-900 text-sm font-semibold text-white dark:bg-neutral-700">
+            AI
           </div>
-        )}
+          <p className="text-base font-medium">Chat with your documents</p>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+            Ask questions, summarize, or explore any file you&apos;ve uploaded.
+          </p>
+        </div>
+      )}
 
-        {messages.map((m, idx) => (
-          <Message key={idx} role={m.role} content={m.content} />
-        ))}
+      {messages.map((m, idx) => {
+        const isUser = m.role === "user";
 
-        {isTyping && (
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white shrink-0 shadow-sm">
-              A
+        return (
+          <div
+            key={idx}
+            className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
+          >
+            {/* Assistant avatar */}
+            {!isUser && (
+              <div className="mr-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
+                AI
+              </div>
+            )}
+
+            <div className="max-w-[80%] space-y-1">
+              <div
+                className={`inline-block rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+                  isUser
+                    ? "bg-blue-600 text-white rounded-br-sm"
+                    : "bg-gray-100 text-gray-900 dark:bg-neutral-800 dark:text-neutral-50 rounded-bl-sm"
+                }`}
+              >
+                {m.content}
+              </div>
             </div>
-            <div className="rounded-2xl px-4 py-2 bg-white/70 backdrop-blur ring-1 ring-gray-200 shadow-sm dark:bg-neutral-800/60 dark:ring-neutral-700">
-              <Typing />
-            </div>
+
+            {/* User avatar */}
+            {isUser && (
+              <div className="ml-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-800 dark:bg-neutral-700 dark:text-neutral-200">
+                You
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })}
 
-      <div className="p-3 border-t bg-white/50 dark:bg-neutral-900/50 dark:border-neutral-800">
-        <form onSubmit={submit} className="relative">
-          <input
-            className="w-full bg-gray-100 dark:bg-neutral-800 rounded-lg py-3 px-5 pr-16 outline-none focus:ring-2 focus:ring-violet-500"
-            placeholder="Ask anything about your documents..."
+      {/* Typing indicator (assistant) */}
+      {isTyping && (
+        <div className="flex items-center justify-start gap-3">
+          <div className="mr-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
+            AI
+          </div>
+          <div className="rounded-2xl bg-gray-100 px-4 py-2 text-sm dark:bg-neutral-800">
+            <Typing />
+          </div>
+        </div>
+      )}
+    </div>
+
+    {/* Input area – bottom, ChatGPT style */}
+    <div className="border-t bg-background/95 p-3 dark:bg-neutral-900/95 dark:border-neutral-800">
+      <form onSubmit={submit} className="relative">
+        <div className="flex items-end gap-2 rounded-xl border bg-white/90 px-3 py-2 dark:bg-neutral-900/80">
+          <textarea
+            className="max-h-32 min-h-[40px] w-full resize-none bg-transparent text-sm outline-none"
+            placeholder="Message your assistant..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
           <button
             type="submit"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
             disabled={!input.trim() || isTyping}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] font-medium text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Send message"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M5 12h14" />
+              <path d="m12 5 7 7-7 7" />
+            </svg>
           </button>
-        </form>
-      </div>
+        </div>
+        <p className="mt-1 px-1 text-[11px] text-muted-foreground">
+          AI can make mistakes. Consider checking important information.
+        </p>
+      </form>
     </div>
-  );
+  </div>
+);
+
 }
