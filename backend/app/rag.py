@@ -42,7 +42,7 @@ def similarity_search(query: str, k: int) -> List[Dict]:
     cur = conn.cursor()
     placeholders = ",".join(["?"] * len(ids))
     cur.execute(
-        f"SELECT vector_id, content, file_name, file_type, page_number, timestamp, filepath FROM vectors WHERE vector_id IN ({placeholders})",
+        f"SELECT vector_id, page_content, file_name, file_type, page_number, timestamp, filepath FROM vectors WHERE vector_id IN ({placeholders})",
         ids,
     )
     rows = cur.fetchall()
@@ -56,7 +56,7 @@ def similarity_search(query: str, k: int) -> List[Dict]:
         results.append(
             {
                 "vector_id": r[0],
-                "content": r[1],
+                "page_content": r[1],
                 "file_name": r[2],
                 "file_type": r[3],
                 "page_number": r[4],
@@ -77,7 +77,7 @@ def build_prompt(query: str, sources: List[Dict]) -> str:
             where += f" page {s['page_number']}"
         if s.get("file_type") == "audio" and s.get("timestamp"):
             where += f" {s['timestamp']}"
-        snippet = (s.get("content") or "").replace("\n", " ")
+        snippet = (s.get("page_content") or "").replace("\n", " ")
         lines.append(f"Source {marker} {where}: \"{snippet}\"")
     lines.append("\nAnswer the user query using only the information from sources [1..k]. Provide citations inline like [1], [2]. If the answer is unknown from sources, say you don't know.")
     lines.append(f"\nUser query: {query}\nAnswer:")
@@ -97,7 +97,7 @@ def answer_query(cfg_path: str, query: str) -> dict:
             {
                 "id": i,
                 "file_name": s.get("file_name"),
-                "snippet": s.get("content"),
+                "snippet": s.get("page_content"),
                 "page_number": s.get("page_number"),
                 "timestamp": s.get("timestamp"),
                 "score": s.get("score"),

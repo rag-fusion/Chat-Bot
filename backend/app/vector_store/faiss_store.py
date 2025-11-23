@@ -121,11 +121,13 @@ class FAISSStore:
             vector_id = start_id + i
             self.metadata[str(vector_id)] = {
                 'vector_id': vector_id,
-                'content': metadata.get('content', ''),
+                'page_content': metadata.get('page_content', ''),
                 'file_name': metadata.get('file_name', ''),
                 'file_type': metadata.get('file_type', ''),
                 'page_number': metadata.get('page_number'),
                 'timestamp': metadata.get('timestamp'),
+                'start_ts': metadata.get('start_ts'),
+                'end_ts': metadata.get('end_ts'),
                 'filepath': metadata.get('filepath'),
                 'width': metadata.get('width'),
                 'height': metadata.get('height'),
@@ -217,8 +219,26 @@ class FAISSStore:
         # This would require re-computing embeddings from original content
         # For now, just reinitialize with current dimension
         self.index = faiss.IndexFlatIP(self.dimension)
+        
+        # Get all embeddings and IDs from metadata
+        embeddings = []
+        ids = []
+        for vector_id, meta in self.metadata.items():
+            # Assuming 'page_content' holds the text for embedding
+            text_to_embed = meta.get('page_content', '')
+            if text_to_embed:
+                # Re-create embedding. This requires access to an embedding function.
+                # This is a placeholder for where you'd call your embedding function.
+                # from ..embeddings import embed_text
+                # embedding = embed_text(text_to_embed)
+                # embeddings.append(embedding)
+                # ids.append(int(vector_id))
+                pass  # Placeholder for re-embedding logic
+    
+        # if embeddings:
+        #     self.index.add_with_ids(np.array(embeddings), np.array(ids))
+        
         self._persist_index()
-
 
 # Global store instance for backward compatibility
 _store_instance: Optional[FAISSStore] = None
