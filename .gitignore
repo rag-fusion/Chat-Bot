@@ -162,3 +162,11 @@ docker-compose.override.yml
 # -------------------------
 .DS_Store
 
+backend/storage/*
+!backend/storage/.gitkeep
+
+backend/models/*
+!backend/models/.gitkeep
+
+backend/whisper/*
+!backend/whisper/.gitkeep
