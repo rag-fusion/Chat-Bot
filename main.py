@@ -7,6 +7,7 @@ Supports both FastAPI and Gradio interfaces.
 import argparse
 import os
 import sys
+import uvicorn
 from pathlib import Path
 
 # Add the backend directory to Python path

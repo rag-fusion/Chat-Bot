@@ -42,22 +42,23 @@ class LlamaCppAdapter(LLMAdapter):
             from llama_cpp import Llama
         except Exception as e:
             raise RuntimeError("llama-cpp-python is not installed. pip install llama-cpp-python") from e
-        self.llm = Llama(model_path=model_path, n_ctx=4096)
+        
+        if not os.path.exists(model_path):
+             raise FileNotFoundError(f"Model file not found at: {model_path}")
+
+        # Initialize Llama model
+        # set verbose=False to reduce console noise if desired
+        self.llm = Llama(model_path=model_path, n_ctx=4096, verbose=True)
     
     def generate(self, prompt: str, max_tokens: int = 512, temperature: float = 0.2) -> str:
-        out = self.llm(prompt=prompt, max_tokens=max_tokens, temperature=temperature)
+        # llama-cpp-python generate call
+        out = self.llm(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            echo=False 
+        )
         return out.get("choices", [{}])[0].get("text", "")
-
-
-class MistralAdapter(LLMAdapter):
-    """Mistral adapter placeholder."""
-    
-    def __init__(self, model_path: str | None = None):
-        self.model_path = model_path
-    
-    def generate(self, prompt: str, max_tokens: int = 512, temperature: float = 0.2) -> str:
-        # Placeholder generation - replace with actual Mistral integration
-        return f"[Mistral placeholder response] Based on the context: {prompt[:200]}..."
 
 
 def load_config(path: str) -> dict:
@@ -78,21 +79,24 @@ def build_adapter(cfg: dict) -> LLMAdapter:
     backend = (cfg.get("model_backend") or "mistral").lower()
     path = cfg.get("model_path")
     
-    # Resolve relative paths to absolute paths
+    # 1. Resolve relative paths to absolute paths
     if path and not os.path.isabs(path):
-        # Get the directory where this file is located (backend/app/llm/)
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up two levels to backend/ directory
         backend_dir = os.path.dirname(os.path.dirname(current_dir))
-        # Resolve the model path relative to backend directory
         path = os.path.abspath(os.path.join(backend_dir, path))
     
+    # 2. Validate path existence (Required)
+    if not path:
+        raise ValueError("Configuration error: 'model_path' is required but not set.")
+
+    # 3. Route backends
     if backend == "gpt4all":
         return GPT4AllAdapter(path)
-    elif backend == "llama_cpp":
+    elif backend in ["llama_cpp", "mistral"]:
+        # Mistral GGUF models are run via llama.cpp
         return LlamaCppAdapter(path)
     else:
-        return MistralAdapter(path)
+        raise ValueError(f"Unknown model_backend: {backend}. Supported: 'gpt4all', 'llama_cpp', 'mistral'")
 
 
 def generate_answer(query: str, context_chunks: List[Dict[str, Any]], 
