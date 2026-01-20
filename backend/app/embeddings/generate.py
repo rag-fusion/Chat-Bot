@@ -51,128 +51,53 @@ def _ensure_cpu_environment():
     return torch.device('cpu')
 
 
-def _get_clip_model() -> torch.nn.Module:
-    """Internal function to get or initialize CLIP model (shared by text and image encoders).
+def _get_clip_model() -> tuple[torch.nn.Module, any]:
+    """Shared internal function to get or initialize CLIP model (unified for Text & Image).
     
-    Optimized for offline CPU operation. Force CPU mode for compatibility.
+    CRITICAL: Must use identical model settings for standardizing the embedding space.
     """
     global _clip_model, _clip_preprocess, _clip_tokenizer
-    if _clip_model is None:
-        # Always use CPU for compatibility
-        device = "cpu"
-        
-        # Try to load from local path first
-        env_path = os.getenv("CLIP_MODEL_PATH")
-        repo_local = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "models", "clip", "ViT-B-32.pt")
-        )
-        alt_repo_local = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "models", "clip", "ViT-B-32.pt")
-        )
-        local_path = next((p for p in [env_path, repo_local, alt_repo_local] if p and os.path.exists(p)), None)
-
-        if local_path:
-            # Check file size to detect TorchScript (they're usually small serialized format)
-            # TorchScript models may have hardcoded CUDA references, so we skip them by default
-            import stat
-            try:
-                file_size = os.path.getsize(local_path)
-                is_likely_torchscript = file_size < 10 * 1024 * 1024  # Less than 10MB is likely TorchScript
-                
-                if is_likely_torchscript:
-                    print(f"Warning: Detected TorchScript model file ({file_size} bytes). Skipping to avoid CUDA hardcoding.")
-                    model, preprocess, _ = open_clip.create_model_and_transforms(
-                        "ViT-B-32", pretrained="openai"
-                    )
-                    model = model.to(device)
-                else:
-                    # Larger files might be state dicts
-                    try:
-                        checkpoint = torch.load(local_path, map_location="cpu", weights_only=False)
-                        if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-                            # State dict checkpoint
-                            model, preprocess, _ = open_clip.create_model_and_transforms(
-                                "ViT-B-32", pretrained=False
-                            )
-                            model.load_state_dict(checkpoint['state_dict'])
-                            model = model.to(device)
-                            print(f"Loaded model from state dict checkpoint")
-                        elif isinstance(checkpoint, dict):
-                            # Attempt to load dict as state
-                            model, preprocess, _ = open_clip.create_model_and_transforms(
-                                "ViT-B-32", pretrained=False
-                            )
-                            model.load_state_dict(checkpoint)
-                            model = model.to(device)
-                            print(f"Loaded model from state dict")
-                        else:
-                            # Unknown format - create fresh model
-                            print(f"Unknown checkpoint format. Creating fresh model.")
-                            model, preprocess, _ = open_clip.create_model_and_transforms(
-                                "ViT-B-32", pretrained="openai"
-                            )
-                            model = model.to(device)
-                    except Exception as e:
-                        print(f"Warning: Could not load checkpoint. Creating fresh model. Error: {str(e)[:100]}")
-                        model, preprocess, _ = open_clip.create_model_and_transforms(
-                            "ViT-B-32", pretrained="openai"
-                        )
-                        model = model.to(device)
-            except Exception as e:
-                print(f"Warning: Error checking local model. Creating fresh model. Error: {str(e)[:100]}")
-                model, preprocess, _ = open_clip.create_model_and_transforms(
-                    "ViT-B-32", pretrained="openai"
-                )
-                model = model.to(device)
-        else:
-            # Download from openai (requires internet on first run)
-            print("No local CLIP model found. Downloading from OpenAI...")
-            model, preprocess, _ = open_clip.create_model_and_transforms(
-                "ViT-B-32", pretrained="openai"
-            )
-            model = model.to(device)
-        
-        model.eval()
-        _clip_model = model
-        _clip_preprocess = preprocess
-        _clip_tokenizer = open_clip.get_tokenizer("ViT-B-32")
     
-    return _clip_model
+    if _clip_model is None:
+        device = _ensure_cpu_environment()
+        print("Initializing unified CLIP model (ViT-B-32) on CPU...")
+        
+        try:
+            # Always use the same settings for both text and image!
+            # force_quick_gelu=True is standard for OpenAI CLIP weights
+            model, preprocess, _ = open_clip.create_model_and_transforms(
+                "ViT-B-32",
+                pretrained="openai",
+                device="cpu",
+                jit=False,
+                force_quick_gelu=True
+            )
+            
+            # Ensure proper eval mode
+            model = model.eval()
+            
+            # Update globals
+            _clip_model = model
+            _clip_preprocess = preprocess
+            _clip_tokenizer = open_clip.get_tokenizer("ViT-B-32")
+            print("CLIP model initialized successfully.")
+            
+        except Exception as e:
+            print(f"Error initializing CLIP model: {e}")
+            raise
+            
+    return _clip_model, _clip_preprocess
 
 
 def get_text_model() -> torch.nn.Module:
-    """Get or initialize CLIP text encoder for unified embeddings (512-dim)."""
-    # Use CLIP model for unified embedding space
-    return _get_clip_model()
+    """Get CLIP model for text encoding."""
+    model, _ = _get_clip_model()
+    return model
 
 
 def get_clip() -> tuple[torch.nn.Module, any]:
-    """Get or initialize CLIP model for image embeddings (strictly CPU-only mode)."""
-    global _clip_model, _clip_preprocess
-    
-    if _clip_model is None:
-        # Force CPU-only environment
-        device = _ensure_cpu_environment()
-        
-        # Create model with strict CPU configuration
-        model, preprocess, _ = open_clip.create_model_and_transforms(
-            "ViT-B-32",
-            pretrained="openai",
-            device="cpu",
-            jit=False,  # Disable JIT to avoid CUDA issues
-            force_quick_gelu=True  # Use CPU-friendly activation
-        )
-        
-        # Force model to CPU mode and eval
-        model = model.to("cpu")
-        for param in model.parameters():
-            param.data = param.data.to("cpu")
-        model.eval()
-        
-        _clip_model = model
-        _clip_preprocess = preprocess
-    
-    return _clip_model, _clip_preprocess
+    """Get CLIP model for image encoding."""
+    return _get_clip_model()
 
 
 def embed_text(text: Union[str, List[str]]) -> np.ndarray:
