@@ -57,9 +57,12 @@ export default function Uploader({ onUploaded }) {
     try {
       const form = new FormData();
       form.append("file", file);
+      const token = localStorage.getItem("token");
       const res = await fetch(`${API_BASE_URL}/ingest`, {
-// ...
         method: "POST",
+        headers: {
+            "Authorization": `Bearer ${token}`
+        },
         body: form,
       });
       
@@ -106,9 +109,12 @@ export default function Uploader({ onUploaded }) {
       try {
         const form = new FormData();
         form.append("file", file);
+        const token = localStorage.getItem("token");
         const res = await fetch(`${API_BASE_URL}/ingest`, {
-// ...
           method: "POST",
+          headers: {
+              "Authorization": `Bearer ${token}`
+          },
           body: form,
         });
 
