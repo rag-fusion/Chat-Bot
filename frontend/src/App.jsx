@@ -315,6 +315,7 @@ function App() {
             </div>
           </div>
         </div>
+      </aside>
 
         {/* User Area at bottom */}
         <div
@@ -455,11 +456,6 @@ function App() {
         </aside>
       )}
 
-      {modalItem && (
-        <SourceModal item={modalItem} onClose={() => setModalItem(null)} />
-      )}
-    </div>
-  );
 }
 
 export default App;

@@ -102,7 +102,12 @@ export default function ChatUI({ messages, onSend, isTyping = false }) {
             <h2 className="text-3xl font-semibold mb-2 text-gray-900">How can I help you today?</h2>
             <p className="text-gray-500 text-sm">Ask me anything about your documents</p>
           </div>
-        )}
+          <p className="text-base font-medium">Chat with your documents</p>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+            Ask questions, summarize, or explore any file you&apos;ve uploaded.
+          </p>
+        </div>
+      )}
 
         <div className="flex flex-col pb-32">
             {messages.map((m, idx) => (
@@ -149,5 +154,7 @@ export default function ChatUI({ messages, onSend, isTyping = false }) {
         </div>
       </div>
     </div>
-  );
+  </div>
+);
+
 }
