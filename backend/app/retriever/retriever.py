@@ -45,7 +45,7 @@ class Retriever:
             score = result.get('score', 0.0)
             
             # Boost score for exact matches in content
-            content = result.get('content', '').lower()
+            content = (result.get('page_content') or result.get('content', '')).lower()
             query_lower = query.lower()
             if query_lower in content:
                 score += 0.1

@@ -121,7 +121,7 @@ class FAISSStore:
             vector_id = start_id + i
             self.metadata[str(vector_id)] = {
                 'vector_id': vector_id,
-                'page_content': metadata.get('page_content', ''),
+                'page_content': metadata.get('page_content') or metadata.get('content', ''),
                 'file_name': metadata.get('file_name', ''),
                 'file_type': metadata.get('file_type', ''),
                 'page_number': metadata.get('page_number'),

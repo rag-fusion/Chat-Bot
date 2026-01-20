@@ -22,7 +22,8 @@ def main():
     args = parser.parse_args()
     
     print(f"Starting Backend API on http://{args.host}:{args.port}")
-    uvicorn.run("backend.app.main:app", host=args.host, port=args.port, reload=True)
+    # reload=True causes multiprocessing issues on Windows if venv is not perfectly linked
+    uvicorn.run("backend.app.main:app", host=args.host, port=args.port, reload=False)
 
 
 if __name__ == "__main__":
