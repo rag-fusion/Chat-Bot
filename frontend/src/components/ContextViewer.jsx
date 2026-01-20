@@ -1,4 +1,5 @@
 import { File, FileAudio, FileImage, FileText } from "lucide-react";
+import { API_BASE_URL } from "../config";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 function ResultScore({ score }) {
@@ -29,7 +30,8 @@ function TextResult({ result, onOpen }) {
           window.open(
             result.url.startsWith("http")
               ? result.url
-              : `http://localhost:8000${result.url}`,
+              : `${API_BASE_URL}${result.url}`,
+// ...
             "_blank"
           );
         } else {
@@ -65,7 +67,8 @@ function ImageResult({ result, onOpen }) {
           window.open(
             result.url.startsWith("http")
               ? result.url
-              : `http://localhost:8000${result.url}`,
+              : `${API_BASE_URL}${result.url}`,
+// ...
             "_blank"
           );
         } else {

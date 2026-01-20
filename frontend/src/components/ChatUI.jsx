@@ -1,6 +1,7 @@
 import { Mic, Send, Paperclip, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import Uploader from "../Uploader";
+import Uploader from "./Uploader";
+import { API_BASE_URL } from "../config";
 
 function CitationNumber({ number, onClick }) {
   return (
@@ -79,7 +80,8 @@ function ChatMessage({ role, content, sources = [], onOpenSource }) {
                           window.open(
                             source.url.startsWith("http")
                               ? source.url
-                              : `http://localhost:8000${source.url}`,
+                              : `${API_BASE_URL}${source.url}`,
+// ...
                             "_blank"
                           );
                         } else {

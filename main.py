@@ -13,29 +13,15 @@ from pathlib import Path
 backend_dir = Path(__file__).parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
-from app.ui.simple_gradio import launch_simple_app
-from app.main import app as fastapi_app
-import uvicorn
-
-
 def main():
     parser = argparse.ArgumentParser(description="Offline Multimodal RAG System")
-    parser.add_argument("--interface", choices=["gradio", "fastapi"], default="gradio",
-                       help="Choose interface: gradio (default) or fastapi")
-    parser.add_argument("--port", type=int, default=7860,
-                       help="Port to run the server on")
-    parser.add_argument("--host", default="127.0.0.1",
-                       help="Host to bind to")
-    parser.add_argument("--config", help="Path to config.yaml file")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
     
     args = parser.parse_args()
     
-    if args.interface == "gradio":
-        print(f"Starting Gradio interface on http://{args.host}:{args.port}")
-        launch_simple_app(port=args.port, config_path=args.config)
-    else:
-        print(f"Starting FastAPI interface on http://{args.host}:{args.port}")
-        uvicorn.run(fastapi_app, host=args.host, port=args.port)
+    print(f"Starting Backend API on http://{args.host}:{args.port}")
+    uvicorn.run("backend.app.main:app", host=args.host, port=args.port, reload=True)
 
 
 if __name__ == "__main__":

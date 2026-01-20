@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "./config";
 import ChatUI from "./components/ChatUI";
 import ContextViewer from "./components/ContextViewer";
 import SourceModal from "./components/SourceModal";
@@ -63,7 +64,7 @@ function App() {
     setIsTyping(true);
 
     try {
-      const res = await fetch("http://localhost:8000/query", {
+      const res = await fetch(`${API_BASE_URL}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: text }),
@@ -315,7 +316,6 @@ function App() {
             </div>
           </div>
         </div>
-      </aside>
 
         {/* User Area at bottom */}
         <div
@@ -456,6 +456,9 @@ function App() {
         </aside>
       )}
 
+      <SourceModal item={modalItem} onClose={() => setModalItem(null)} />
+    </div>
+  );
 }
 
 export default App;

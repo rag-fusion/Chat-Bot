@@ -94,154 +94,10 @@ async def ingest(file: UploadFile = File(...)):
         storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "storage"))
         os.makedirs(storage_dir, exist_ok=True)
         # storage is mounted on startup; ensure dir exists
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="Missing filename")
         
-        dest_path = os.path.join(storage_dir, file.filename)
-        data = await file.read()
-        
-        if not data:
-            raise HTTPException(status_code=400, detail="Empty file uploaded")
-        
-        with open(dest_path, "wb") as f:
-            f.write(data)
-
-        # Extract chunks using new ingestion module
-        try:
-            chunks = extract_any(dest_path, file.filename, file.content_type or "")
-        except Exception as e:
-            raise HTTPException(
-                status_code=422, 
-                detail=f"Failed to extract content from file: {str(e)}"
-            )
-        
-        if not chunks:
-            # If the uploaded file is audio, don't fail the whole ingestion when
-            # transcription cannot be performed (missing ASR/model). Instead,
-            # create a placeholder audio chunk so the file is still indexed and
-            # can be surfaced to the user with a message about transcription.
-            audio_exts = ('.mp3', '.wav', '.m4a', '.flac', '.ogg')
-            if file.filename.lower().endswith(audio_exts):
-                from .ingestion.base import Chunk
-                placeholder = Chunk(
-                    content="[Transcription unavailable: install a local ASR model (whisper or faster-whisper) to enable transcripts]",
-                    file_name=file.filename,
-                    file_type="audio",
-                    filepath=dest_path,
-                    timestamp=None
-                )
-                setattr(placeholder, 'start_ts', None)
-                setattr(placeholder, 'end_ts', None)
-                chunks = [placeholder]
-            else:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"No content could be extracted from {file.filename}. The file may be corrupted or in an unsupported format."
-                )
-        
-        # Generate embeddings and store using new vector store
-        try:
-            store = get_store()
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to initialize vector store: {str(e)}"
-            )
-        
-        items = []
-        
-        # Optimize: batch text embeddings for better performance
-        text_chunks = []
-        image_chunks = []
-        text_indices = []
-        image_indices = []
-        
-        for i, chunk in enumerate(chunks):
-            if chunk.file_type == 'image':
-                image_chunks.append((i, chunk))
-            else:
-                text_chunks.append((i, chunk))
-        
-        # Batch process text embeddings
-        if text_chunks:
-            try:
-                text_contents = [chunk.content for _, chunk in text_chunks]
-                text_embeddings = embed_text(text_contents)  # Batch embedding
-                
-                for idx, (orig_idx, chunk) in enumerate(text_chunks):
-                    embedding = text_embeddings[idx] if text_embeddings.ndim == 2 else text_embeddings
-                    if embedding.ndim == 2:
-                        embedding = embedding[0]  # Remove batch dimension
-                    
-                    items.append({
-                        'embedding': embedding,
-                        'metadata': {
-                            'content': chunk.content,
-                            'file_name': chunk.file_name,
-                            'file_type': chunk.file_type,
-                            'page_number': chunk.page_number,
-                                'timestamp': chunk.timestamp,
-                                'start_ts': getattr(chunk, 'start_ts', None),
-                                'end_ts': getattr(chunk, 'end_ts', None),
-                            'filepath': chunk.filepath,
-                            'width': getattr(chunk, 'width', None),
-                            'height': getattr(chunk, 'height', None),
-                            'bbox': getattr(chunk, 'bbox', None),
-                            'char_start': getattr(chunk, 'char_start', None),
-                            'char_end': getattr(chunk, 'char_end', None),
-                                'modality': chunk.file_type
-                        }
-                    })
-            except Exception as e:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to generate text embeddings: {str(e)}"
-                )
-        
-        # Process image embeddings (one at a time - CLIP handles batching internally if needed)
-        for orig_idx, chunk in image_chunks:
-            try:
-                embedding = embed_image(chunk.filepath)
-                if embedding.ndim == 2:
-                    embedding = embedding[0]  # Remove batch dimension
-                
-                items.append({
-                    'embedding': embedding,
-                    'metadata': {
-                        'content': chunk.content,
-                        'file_name': chunk.file_name,
-                        'file_type': chunk.file_type,
-                        'page_number': chunk.page_number,
-                        'timestamp': chunk.timestamp,
-                        'start_ts': getattr(chunk, 'start_ts', None),
-                        'end_ts': getattr(chunk, 'end_ts', None),
-                        'filepath': chunk.filepath,
-                        'width': getattr(chunk, 'width', None),
-                        'height': getattr(chunk, 'height', None),
-                        'bbox': getattr(chunk, 'bbox', None),
-                        'char_start': getattr(chunk, 'char_start', None),
-                        'char_end': getattr(chunk, 'char_end', None),
-                        'modality': chunk.file_type
-                    }
-                })
-            except Exception as e:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to generate image embedding for {chunk.file_name}: {str(e)}"
-                )
-        
-        # Sort items back to original order if needed (for consistency)
-        # items are already in correct order
-        
-        try:
-            vectors_added = store.upsert(items)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to store vectors in database: {str(e)}"
-            )
-        
-        return {"chunks_added": len(chunks), "vectors_indexed": vectors_added, "file": file.filename}
+        # Delegate to ingestion service
+        from .ingest import process_and_ingest_file
+        return await process_and_ingest_file(file, storage_dir)
     
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -252,6 +108,7 @@ async def ingest(file: UploadFile = File(...)):
             status_code=500,
             detail=f"Unexpected error during file ingestion: {str(e)}"
         )
+    
 
 
 @app.post("/api/chat")

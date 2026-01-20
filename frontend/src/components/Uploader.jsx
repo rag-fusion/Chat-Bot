@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { UploadZone, FilePreview } from "./components/ui/upload-zone";
+import { API_BASE_URL } from "../config";
+import { UploadZone, FilePreview } from "./ui/upload-zone";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 const ACCEPTED_FILES = [
@@ -56,7 +57,8 @@ export default function Uploader({ onUploaded }) {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("http://localhost:8000/ingest", {
+      const res = await fetch(`${API_BASE_URL}/ingest`, {
+// ...
         method: "POST",
         body: form,
       });
@@ -104,7 +106,8 @@ export default function Uploader({ onUploaded }) {
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch("http://localhost:8000/ingest", {
+        const res = await fetch(`${API_BASE_URL}/ingest`, {
+// ...
           method: "POST",
           body: form,
         });

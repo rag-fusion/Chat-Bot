@@ -8,31 +8,13 @@ sentence-transformers==3.0.1
 PyMuPDF==1.24.10
 python-docx==1.1.2
 Pillow==10.4.0
-# torch==2.4.1
 open-clip-torch==2.26.1
-# torchaudio==2.4.1
 rich==13.8.1
-
 aiohttp==3.10.5
 PyYAML==6.0.2
-# Optional LLM backends (install as needed):
-# gpt4all
 llama-cpp-python==0.2.90
-# open-clip-torch already included for image embeddings
 reportlab==4.2.2
-
-# Gradio for UI
-gradio==4.44.0
-
-# Optional OCR
-# pytesseract
-
-# Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
-
-
-
-# Audio Transcription
 openai-whisper==20231117
 ffmpeg-python==0.2.0
