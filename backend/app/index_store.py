@@ -27,7 +27,7 @@ def connect_db():
         CREATE TABLE IF NOT EXISTS vectors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             vector_id INTEGER,
-            content TEXT,
+            page_content TEXT,
             file_name TEXT,
             file_type TEXT,
             page_number INTEGER,
@@ -70,12 +70,12 @@ def add_embeddings_with_metadata(embeddings: np.ndarray, metadatas: List[dict]) 
     for i, meta in enumerate(metadatas):
         cur.execute(
             """
-            INSERT INTO vectors (vector_id, content, file_name, file_type, page_number, timestamp, filepath, width, height, bbox)
+            INSERT INTO vectors (vector_id, page_content, file_name, file_type, page_number, timestamp, filepath, width, height, bbox)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 start_id + i,
-                meta.get("content"),
+                meta.get("page_content"),
                 meta.get("file_name"),
                 meta.get("file_type"),
                 meta.get("page_number"),
@@ -107,7 +107,7 @@ def status() -> dict:
 def rebuild_from_db(dim: int) -> dict:
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute("SELECT rowid, content FROM vectors ORDER BY rowid")
+    cur.execute("SELECT rowid, page_content FROM vectors ORDER BY rowid")
     rows = cur.fetchall()
     conn.close()
     if not rows:

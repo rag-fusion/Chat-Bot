@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Mic } from "lucide-react";
 
 export default function ChatUI({ messages, onSend, isTyping = false }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef(null);
 
-  // Simplified submit handler for text-only input
+  // Submit handler
   const submit = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -12,6 +13,7 @@ export default function ChatUI({ messages, onSend, isTyping = false }) {
     setInput("");
   };
 
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -20,63 +22,85 @@ export default function ChatUI({ messages, onSend, isTyping = false }) {
 
   const Message = ({ role, content }) => {
     const isUser = role === "user";
+    const isSystem = role === "system";
+    
+    if (isSystem) {
+        return (
+            <div className="flex justify-center my-4 px-4">
+                <span className="text-xs text-gray-500 bg-gray-50 px-4 py-2 rounded-full border border-gray-200">
+                    {content}
+                </span>
+            </div>
+        );
+    }
+
     return (
       <div
-        className={`flex items-start gap-3 ${
-          isUser ? "justify-end" : "justify-start"
-        }`}
+        className={`w-full ${
+          isUser ? "bg-white" : "bg-gray-50"
+        } border-b border-gray-100`}
       >
-        {!isUser && (
-          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white shrink-0 shadow-sm">
-            A
+        <div className="flex gap-4 p-6 text-base md:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem] mx-auto">
+          <div className="flex-shrink-0 flex flex-col relative items-end">
+            {isUser ? (
+              <div className="h-8 w-8 rounded-full bg-purple-500 flex items-center justify-center text-white font-semibold">
+                U
+              </div>
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center text-white shadow-sm">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor" opacity="0.4"/>
+                  <path d="M2 17L12 22L22 17V12L12 17L2 12V17Z" fill="currentColor"/>
+                </svg>
+              </div>
+            )}
           </div>
-        )}
-        <div
-          className={
-            isUser
-              ? "max-w-[80%] sm:max-w-[75%] md:max-w-[70%] rounded-2xl px-4 py-2.5 bg-blue-600 text-white shadow-md animate-in fade-in slide-in-from-right-2 duration-200"
-              : "max-w-[80%] sm:max-w-[75%] md:max-w-[70%] rounded-2xl px-4 py-2.5 bg-white/70 backdrop-blur ring-1 ring-gray-200 shadow-sm animate-in fade-in slide-in-from-left-2 duration-200 dark:bg-neutral-800/70 dark:ring-neutral-700"
-          }
-        >
-          <p className="whitespace-pre-wrap leading-relaxed">{content}</p>
+          
+          <div className="relative flex-1 overflow-hidden">
+              <div className="prose prose-gray max-w-none break-words">
+                  <p className="whitespace-pre-wrap text-gray-900 leading-7">{content}</p>
+              </div>
+          </div>
         </div>
-        {isUser && (
-          <div className="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-            U
-          </div>
-        )}
       </div>
     );
   };
 
   const Typing = () => (
-    <div className="flex items-center gap-2 text-gray-500">
-      <span
-        className="h-2 w-2 rounded-full bg-gray-400 animate-bounce"
-        style={{ animationDelay: "0ms" }}
-      />
-      <span
-        className="h-2 w-2 rounded-full bg-gray-400 animate-bounce"
-        style={{ animationDelay: "150ms" }}
-      />
-      <span
-        className="h-2 w-2 rounded-full bg-gray-400 animate-bounce"
-        style={{ animationDelay: "300ms" }}
-      />
+    <div className="w-full bg-gray-50 border-b border-gray-100">
+      <div className="flex gap-4 p-6 md:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem] mx-auto">
+          <div className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center text-white shadow-sm">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="animate-pulse">
+                <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor" opacity="0.4"/>
+                <path d="M2 17L12 22L22 17V12L12 17L2 12V17Z" fill="currentColor"/>
+              </svg>
+          </div>
+          <div className="flex items-center gap-1">
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></span>
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></span>
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></span>
+          </div>
+      </div>
     </div>
   );
 
   return (
-  <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border bg-background/95 shadow-lg dark:bg-neutral-900/90 dark:border-neutral-800">
-    {/* Messages area */}
-    <div
-      ref={scrollRef}
-      className="relative flex-1 px-4 sm:px-6 py-4 space-y-4 h-[60vh] min-h-[400px] max-h-[700px] overflow-y-auto"
-    >
-      {messages.length === 0 && (
-        <div className="flex h-full flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-900 text-sm font-semibold text-white dark:bg-neutral-700">
-            AI
+    <div className="flex flex-col h-full relative">
+      {/* Messages Area */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto w-full"
+      >
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg flex items-center justify-center mb-6">
+                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor" opacity="0.6"/>
+                    <path d="M2 17L12 22L22 17V12L12 17L2 12V17Z" fill="currentColor"/>
+                 </svg>
+            </div>
+            <h2 className="text-3xl font-semibold mb-2 text-gray-900">How can I help you today?</h2>
+            <p className="text-gray-500 text-sm">Ask me anything about your documents</p>
           </div>
           <p className="text-base font-medium">Chat with your documents</p>
           <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
@@ -85,92 +109,50 @@ export default function ChatUI({ messages, onSend, isTyping = false }) {
         </div>
       )}
 
-      {messages.map((m, idx) => {
-        const isUser = m.role === "user";
+        <div className="flex flex-col pb-32">
+            {messages.map((m, idx) => (
+            <Message key={idx} role={m.role} content={m.content} />
+            ))}
+            {isTyping && <Typing />}
+        </div>
+      </div>
 
-        return (
-          <div
-            key={idx}
-            className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
-          >
-            {/* Assistant avatar */}
-            {!isUser && (
-              <div className="mr-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
-                AI
-              </div>
-            )}
-
-            <div className="max-w-[80%] space-y-1">
-              <div
-                className={`inline-block rounded-2xl px-4 py-2 text-sm leading-relaxed ${
-                  isUser
-                    ? "bg-blue-600 text-white rounded-br-sm"
-                    : "bg-gray-100 text-gray-900 dark:bg-neutral-800 dark:text-neutral-50 rounded-bl-sm"
-                }`}
-              >
-                {m.content}
-              </div>
+      {/* Input Area */}
+      <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-white via-white to-transparent pt-10 pb-6 px-4">
+        <div className="max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem] mx-auto">
+            <form onSubmit={submit} className="relative flex items-center w-full px-4 py-3 bg-white border border-gray-300 rounded-2xl shadow-lg hover:shadow-xl transition-shadow focus-within:border-gray-400">
+                <input
+                    className="w-full max-h-[200px] pr-24 bg-transparent border-none focus:ring-0 resize-none outline-none text-base text-gray-900 placeholder-gray-400"
+                    placeholder="Send a message..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                />
+                <div className="absolute right-3 flex items-center gap-2">
+                  <button
+                      type="button"
+                      className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+                      title="Voice input (placeholder)"
+                  >
+                      <Mic className="w-5 h-5" />
+                  </button>
+                  <button
+                      type="submit"
+                      disabled={!input.trim() || isTyping}
+                      className="p-2 rounded-lg bg-green-500 text-white disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-green-600 transition-colors"
+                  >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor"/>
+                      </svg>
+                  </button>
+                </div>
+            </form>
+            <div className="text-center mt-3">
+                <p className="text-xs text-gray-400">
+                    AI can make mistakes. Consider checking important information.
+                </p>
             </div>
-
-            {/* User avatar */}
-            {isUser && (
-              <div className="ml-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-800 dark:bg-neutral-700 dark:text-neutral-200">
-                You
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Typing indicator (assistant) */}
-      {isTyping && (
-        <div className="flex items-center justify-start gap-3">
-          <div className="mr-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
-            AI
-          </div>
-          <div className="rounded-2xl bg-gray-100 px-4 py-2 text-sm dark:bg-neutral-800">
-            <Typing />
-          </div>
         </div>
-      )}
-    </div>
-
-    {/* Input area – bottom, ChatGPT style */}
-    <div className="border-t bg-background/95 p-3 dark:bg-neutral-900/95 dark:border-neutral-800">
-      <form onSubmit={submit} className="relative">
-        <div className="flex items-end gap-2 rounded-xl border bg-white/90 px-3 py-2 dark:bg-neutral-900/80">
-          <textarea
-            className="max-h-32 min-h-[40px] w-full resize-none bg-transparent text-sm outline-none"
-            placeholder="Message your assistant..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isTyping}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] font-medium text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Send message"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M5 12h14" />
-              <path d="m12 5 7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-        <p className="mt-1 px-1 text-[11px] text-muted-foreground">
-          AI can make mistakes. Consider checking important information.
-        </p>
-      </form>
+      </div>
     </div>
   </div>
 );

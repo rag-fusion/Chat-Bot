@@ -72,63 +72,61 @@ def _get_clip_model() -> torch.nn.Module:
         local_path = next((p for p in [env_path, repo_local, alt_repo_local] if p and os.path.exists(p)), None)
 
         if local_path:
-            # Check if it's a TorchScript model or state dict
-            # TorchScript models may have hardcoded CUDA references, so we need to be careful
+            # Check file size to detect TorchScript (they're usually small serialized format)
+            # TorchScript models may have hardcoded CUDA references, so we skip them by default
+            import stat
             try:
-                # Try loading as TorchScript first (always force CPU to avoid CUDA issues)
-                model = torch.jit.load(local_path, map_location="cpu")
-                # For TorchScript, we still need preprocess
-                _, preprocess, _ = open_clip.create_model_and_transforms("ViT-B-32", pretrained=False)
-                # Force model to CPU (TorchScript models may have hardcoded CUDA)
-                model = model.cpu()
-                model.eval()
-            except (Exception, RuntimeError) as e:
-                error_str = str(e)
-                # Check if error is CUDA-related - if so, skip this file entirely
-                is_cuda_error = "CUDA" in error_str or "cuda" in error_str.lower()
+                file_size = os.path.getsize(local_path)
+                is_likely_torchscript = file_size < 10 * 1024 * 1024  # Less than 10MB is likely TorchScript
                 
-                if is_cuda_error:
-                    # TorchScript file has hardcoded CUDA - skip it and create fresh model
-                    print(f"Warning: TorchScript model file has hardcoded CUDA references. Skipping file and creating fresh CPU-compatible model.")
+                if is_likely_torchscript:
+                    print(f"Warning: Detected TorchScript model file ({file_size} bytes). Skipping to avoid CUDA hardcoding.")
                     model, preprocess, _ = open_clip.create_model_and_transforms(
                         "ViT-B-32", pretrained="openai"
                     )
                     model = model.to(device)
                 else:
-                    # Fall back to state dict loading or create fresh model
-                    print(f"Loading model from state dict (TorchScript failed: {error_str[:100]})")
+                    # Larger files might be state dicts
                     try:
-                        model, preprocess, _ = open_clip.create_model_and_transforms(
-                            "ViT-B-32", pretrained=False
-                        )
                         checkpoint = torch.load(local_path, map_location="cpu", weights_only=False)
                         if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                            # State dict checkpoint
+                            model, preprocess, _ = open_clip.create_model_and_transforms(
+                                "ViT-B-32", pretrained=False
+                            )
                             model.load_state_dict(checkpoint['state_dict'])
+                            model = model.to(device)
+                            print(f"Loaded model from state dict checkpoint")
                         elif isinstance(checkpoint, dict):
+                            # Attempt to load dict as state
+                            model, preprocess, _ = open_clip.create_model_and_transforms(
+                                "ViT-B-32", pretrained=False
+                            )
                             model.load_state_dict(checkpoint)
+                            model = model.to(device)
+                            print(f"Loaded model from state dict")
                         else:
-                            # If it's not a dict, it might be a TorchScript model object
-                            # Check if it has TorchScript attributes
-                            if hasattr(checkpoint, 'encode_image') and hasattr(checkpoint, 'graph'):
-                                # It's a TorchScript model - skip it
-                                print("Warning: Model file is TorchScript. Creating fresh model for CPU compatibility.")
-                                model, preprocess, _ = open_clip.create_model_and_transforms(
-                                    "ViT-B-32", pretrained="openai"
-                                )
-                            else:
-                                model = checkpoint
-                                _, preprocess, _ = open_clip.create_model_and_transforms("ViT-B-32", pretrained=False)
-                        # Move to device (will be CPU)
-                        model = model.to(device)
-                    except Exception as e2:
-                        # If state dict loading also fails, create a fresh model
-                        print(f"Warning: Could not load model from file. Creating fresh model. Error: {str(e2)[:100]}")
+                            # Unknown format - create fresh model
+                            print(f"Unknown checkpoint format. Creating fresh model.")
+                            model, preprocess, _ = open_clip.create_model_and_transforms(
+                                "ViT-B-32", pretrained="openai"
+                            )
+                            model = model.to(device)
+                    except Exception as e:
+                        print(f"Warning: Could not load checkpoint. Creating fresh model. Error: {str(e)[:100]}")
                         model, preprocess, _ = open_clip.create_model_and_transforms(
                             "ViT-B-32", pretrained="openai"
                         )
                         model = model.to(device)
+            except Exception as e:
+                print(f"Warning: Error checking local model. Creating fresh model. Error: {str(e)[:100]}")
+                model, preprocess, _ = open_clip.create_model_and_transforms(
+                    "ViT-B-32", pretrained="openai"
+                )
+                model = model.to(device)
         else:
             # Download from openai (requires internet on first run)
+            print("No local CLIP model found. Downloading from OpenAI...")
             model, preprocess, _ = open_clip.create_model_and_transforms(
                 "ViT-B-32", pretrained="openai"
             )
@@ -215,7 +213,11 @@ def embed_text(text: Union[str, List[str]]) -> np.ndarray:
 
 
 def embed_image(path: str) -> np.ndarray:
-    """Generate embeddings for image with strict CPU-only mode."""
+    """Generate embeddings for image with strict CPU-only mode.
+    
+    Returns:
+        numpy array of shape (1, 512) containing normalized CLIP image embedding.
+    """
     global _clip_model, _clip_preprocess
     
     # Force CPU-only environment
@@ -242,14 +244,22 @@ def embed_image(path: str) -> np.ndarray:
             try:
                 # Encode image and normalize
                 feats = model.encode_image(batch)
+                # Normalize: feats shape is (1, 512), normalize per-sample
                 feats = feats / feats.norm(dim=-1, keepdim=True)
-                return feats.cpu().numpy().astype(np.float32)
+                result = feats.cpu().numpy().astype(np.float32)
+                
+                # Ensure shape is (1, 512)
+                if result.ndim == 1:
+                    result = result.reshape(1, -1)
+                
+                assert result.shape == (1, 512), f"Expected shape (1, 512), got {result.shape}"
+                return result
+                
             except RuntimeError as e:
                 error_msg = str(e)
                 if "CUDA" in error_msg or "cuda" in error_msg.lower():
                     print("Warning: CUDA operation attempted. Reinitializing in CPU-only mode...")
                     # Reset model to force CPU reinitialization
-                    global _clip_model, _clip_preprocess
                     _clip_model = None
                     _clip_preprocess = None
                     # Retry with fresh CPU model
@@ -258,38 +268,15 @@ def embed_image(path: str) -> np.ndarray:
                     batch = torch.stack([image]).cpu()
                     feats = model.encode_image(batch)
                     feats = feats / feats.norm(dim=-1, keepdim=True)
-                    return feats.cpu().numpy().astype(np.float32)
+                    result = feats.cpu().numpy().astype(np.float32)
+                    if result.ndim == 1:
+                        result = result.reshape(1, -1)
+                    return result
                 raise  # Re-raise if it's not a CUDA error
+                
     except Exception as e:
         print(f"Error processing image {path}: {str(e)}")
         raise
-    
-    try:
-        with torch.no_grad():
-            feats = model.encode_image(batch)
-            feats = feats / feats.norm(dim=-1, keepdim=True)
-    except RuntimeError as e:
-        if "CUDA" in str(e) or "cuda" in str(e).lower():
-            # Model has CUDA hardcoded in TorchScript - need to recreate model
-            print(f"Warning: TorchScript model has hardcoded CUDA references. Recreating model for CPU compatibility.")
-            # Reset global model to force recreation
-            _clip_model = None
-            _clip_preprocess = None
-            
-            # Recreate model (will be CPU-compatible)
-            model, preprocess = get_clip()
-            device = torch.device("cpu")
-            model = model.cpu()
-            batch = batch.cpu()
-            
-            with torch.no_grad():
-                feats = model.encode_image(batch)
-                feats = feats / feats.norm(dim=-1, keepdim=True)
-        else:
-            raise
-    
-    # Always return CPU numpy array
-    return feats.cpu().numpy().astype(np.float32)
 
 
 def embed_audio_segment(transcript: str) -> np.ndarray:

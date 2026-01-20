@@ -1,17 +1,9 @@
 import { useEffect, useState } from "react";
 import ChatUI from "./components/ChatUI";
-import Uploader from "./Uploader";
 import ContextViewer from "./components/ContextViewer";
 import SourceModal from "./components/SourceModal";
-import Header from "./components/Header";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "./components/ui/sheet";
-import { Menu, X, FileText, Database } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "./components/ui/sheet";
+import { Menu, X, Database } from "lucide-react";
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -21,11 +13,14 @@ function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showSidebar, setShowSidebar] = useState(true);
   const [indexedDocs, setIndexedDocs] = useState(0);
-  const [dark, setDark] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const saved = localStorage.getItem("theme-dark");
-    return saved ? JSON.parse(saved) : false;
-  });
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  // Static chat history for demo
+  const [chatHistory] = useState([
+    { id: 1, title: "What is RAG?", date: "Today" },
+    { id: 2, title: "Document analysis help", date: "Yesterday" },
+    { id: 3, title: "Audio transcription query", date: "Nov 20" },
+  ]);
 
   // Monitor online/offline status
   useEffect(() => {
@@ -35,7 +30,7 @@ function App() {
         ...prev,
         {
           role: "system",
-          content: "✅ Connection restored. You're back online!",
+          content: "Connection restored. You're back online!",
         },
       ]);
     };
@@ -46,7 +41,8 @@ function App() {
         ...prev,
         {
           role: "system",
-          content: "📴 You're offline. Don't worry, you can still query your uploaded documents!",
+          content:
+            "You're offline. Don't worry, you can still query your uploaded documents!",
         },
       ]);
     };
@@ -60,19 +56,7 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-    localStorage.setItem("theme-dark", JSON.stringify(dark));
-  }, [dark]);
-
   // Welcome message on first load
-  useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([
-        
-      ]);
-    }
-  }, []);
 
   const handleSend = async (text) => {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
@@ -88,7 +72,7 @@ function App() {
       if (!res.ok) throw new Error("Query failed");
 
       const data = await res.json();
-      
+
       setMessages((prev) => [
         ...prev,
         {
@@ -110,30 +94,12 @@ function App() {
         {
           role: "assistant",
           content: isOnline
-            ? "❌ Sorry, I couldn't connect to the server. Please check if the backend is running."
-            : "📴 You're offline. Make sure your documents are already indexed to query them.",
+            ? "Sorry, I couldn't connect to the server. Please check if the backend is running."
+            : "You're offline. Make sure your documents are already indexed to query them.",
         },
       ]);
     }
     setIsTyping(false);
-  };
-
-  const doSearch = async (query) => {
-    if (!query || !query.trim()) {
-      setResults([]);
-      return;
-    }
-    try {
-      const res = await fetch("http://localhost:8000/search/similarity", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, k: 8 }),
-      });
-      const data = await res.json();
-      setResults(data.results || []);
-    } catch (e) {
-      console.error("Search failed:", e);
-    }
   };
 
   const handleUploadComplete = (data) => {
@@ -142,143 +108,353 @@ function App() {
       ...prev,
       {
         role: "system",
-        content: `✅ Successfully indexed: ${data.file || "document"}\n📊 Vectors indexed: ${data.vectors_indexed || 0}`,
+        content: `Successfully indexed: ${
+          data.file || "document"
+        }\nVectors indexed: ${data.vectors_indexed || 0}`,
       },
     ]);
   };
 
- return (
-  <div className="flex min-h-screen flex-col bg-background">
-    <Header dark={dark} setDark={setDark} isOnline={isOnline} />
+  return (
+    <div
+      className={`flex h-screen w-full overflow-hidden ${
+        isDarkMode ? "bg-gray-900" : "bg-white"
+      }`}
+    >
+      {/* Mobile Navigation */}
+      <div className="lg:hidden fixed top-4 left-4 z-50">
+        <Sheet>
+          <SheetTrigger asChild>
+            <button
+              className={`p-2 rounded-md transition-colors ${
+                isDarkMode
+                  ? "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          </SheetTrigger>
+          <SheetContent
+            side="left"
+            className={`w-[280px] p-0 border-r ${
+              isDarkMode
+                ? "bg-gray-800 border-gray-700 text-gray-100"
+                : "bg-white border-gray-200 text-gray-900"
+            }`}
+          >
+            <div className="p-3 flex-1 overflow-y-auto flex flex-col h-full">
+              <button
+                onClick={() => {
+                  setMessages([]);
+                  setResults([]);
+                }}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all text-sm font-medium mb-4 ${
+                  isDarkMode
+                    ? "border-gray-600 hover:bg-gray-700 text-gray-100"
+                    : "border-gray-300 hover:bg-gray-100 text-gray-900"
+                }`}
+              >
+                <span className="text-lg">+</span> New Chat
+              </button>
 
-    {/* Offline Banner */}
-    {!isOnline && (
-      <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2">
-        <p className="text-sm text-center text-amber-700 dark:text-amber-400">
-          🔌 Offline Mode Active - You can query already indexed documents
-        </p>
+              <div className="mb-6 flex-1">
+                <div
+                  className={`text-xs font-semibold mb-2 px-2 ${
+                    isDarkMode ? "text-gray-500" : "text-gray-600"
+                  }`}
+                >
+                  Chat History
+                </div>
+                <div className="space-y-1">
+                  {chatHistory.map((chat) => (
+                    <div
+                      key={chat.id}
+                      className={`px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                        isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                      }`}
+                    >
+                      <div
+                        className={`text-sm truncate ${
+                          isDarkMode ? "text-gray-100" : "text-gray-900"
+                        }`}
+                      >
+                        {chat.title}
+                      </div>
+                      <div
+                        className={`text-xs ${
+                          isDarkMode ? "text-gray-500" : "text-gray-600"
+                        }`}
+                      >
+                        {chat.date}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="px-2 mb-4">
+                <div
+                  className={`text-xs font-semibold mb-2 ${
+                    isDarkMode ? "text-gray-500" : "text-gray-600"
+                  }`}
+                >
+                  Database Stats
+                </div>
+                <div
+                  className={`text-sm flex items-center gap-2 px-3 py-2 rounded-lg ${
+                    isDarkMode
+                      ? "bg-gray-700 text-gray-400"
+                      : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  <Database className="w-4 h-4" />
+                  {indexedDocs} indexed
+                </div>
+              </div>
+
+              {/* User Area */}
+              <div
+                className={`border-t pt-3 ${
+                  isDarkMode ? "border-gray-700" : "border-gray-200"
+                }`}
+              >
+                <div
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                    isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm">
+                    U
+                  </div>
+                  <div className="text-sm font-medium">User</div>
+                </div>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
-    )}
 
-    {/* Mobile Navigation (same, convenient buttons) */}
-    <div className="fixed bottom-4 left-4 right-4 flex items-center justify-center gap-2 lg:hidden z-50">
-      <Sheet>
-        <SheetTrigger asChild>
-          <button className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-all">
-            <FileText className="w-4 h-4 mr-2" />
-            Upload Files
-          </button>
-        </SheetTrigger>
-        <SheetContent side="left" className="w-[300px] sm:w-[400px]">
-          <SheetHeader>
-            <SheetTitle>Upload Documents</SheetTitle>
-          </SheetHeader>
-          <div className="mt-6">
-            <Uploader onUploaded={handleUploadComplete} />
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      <Sheet>
-        <SheetTrigger asChild>
-          <button className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-all">
-            <Database className="w-4 h-4 mr-2" />
-            Context
-          </button>
-        </SheetTrigger>
-        <SheetContent className="w-[300px] sm:w-[400px]">
-          <SheetHeader>
-            <SheetTitle>Retrieved Context</SheetTitle>
-          </SheetHeader>
-          <div className="mt-6">
-            <ContextViewer results={results} onOpen={setModalItem} />
-          </div>
-        </SheetContent>
-      </Sheet>
-    </div>
-
-    {/* Main Layout */}
-    <div className="container mx-auto flex flex-1 gap-4 p-4 pb-24 lg:pb-4 max-w-6xl">
-      {/* Left Panel - Library + Context (ChatGPT ke sidebar jaisa) */}
+      {/* Sidebar (Desktop) */}
       <aside
-        className={`hidden lg:flex w-80 flex-col gap-4 transition-all duration-300 ${
-          showSidebar ? "" : "-ml-80 opacity-0"
+        className={`${
+          showSidebar ? "w-[260px]" : "w-0"
+        } hidden lg:flex flex-col transition-all duration-300 ease-in-out overflow-hidden border-r ${
+          isDarkMode
+            ? "bg-gray-800 text-gray-100 border-gray-700"
+            : "bg-white text-gray-900 border-gray-200"
         }`}
       >
-        {/* Document Library */}
-        <div className="rounded-xl border bg-card text-card-foreground shadow-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 p-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Document Library
-            </h3>
-            <p className="text-xs text-white/80 mt-1">
-              {indexedDocs} document(s) indexed
-            </p>
-          </div>
-          <div className="p-6">
-            <Uploader onUploaded={handleUploadComplete} />
-          </div>
-        </div>
+        <div className="p-3 flex-1 overflow-y-auto flex flex-col">
+          <button
+            onClick={() => {
+              setMessages([]);
+              setResults([]);
+            }}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all text-sm font-medium mb-6 ${
+              isDarkMode
+                ? "border-gray-600 hover:bg-gray-700 text-gray-100"
+                : "border-gray-300 hover:bg-gray-100 text-gray-900"
+            }`}
+          >
+            <span className="text-lg">+</span> New Chat
+          </button>
 
-        {/* Retrieved Context (ab left mein hi) */}
-        <div className="rounded-xl border bg-card text-card-foreground shadow-lg overflow-hidden flex-1 min-h-0">
-          <div className="bg-gradient-to-r from-blue-500 to-cyan-500 p-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Database className="w-5 h-5" />
-              Retrieved Context
-            </h3>
-            <p className="text-xs text-white/80 mt-1">
-              {results.length} result(s) found
-            </p>
+          <div className="mb-6 flex-1">
+            <div
+              className={`text-xs font-semibold mb-3 px-2 ${
+                isDarkMode ? "text-gray-500" : "text-gray-600"
+              }`}
+            >
+              Chat History
+            </div>
+            <div className="space-y-1">
+              {chatHistory.map((chat) => (
+                <div
+                  key={chat.id}
+                  className={`px-3 py-2 rounded-lg cursor-pointer transition-colors group ${
+                    isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                  }`}
+                >
+                  <div
+                    className={`text-sm truncate ${
+                      isDarkMode ? "text-gray-100" : "text-gray-900"
+                    }`}
+                  >
+                    {chat.title}
+                  </div>
+                  <div
+                    className={`text-xs ${
+                      isDarkMode ? "text-gray-500" : "text-gray-600"
+                    }`}
+                  >
+                    {chat.date}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="p-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
-            <ContextViewer results={results} onOpen={setModalItem} />
+
+          <div className="px-2 mb-4">
+            <div
+              className={`text-xs font-semibold mb-2 ${
+                isDarkMode ? "text-gray-500" : "text-gray-600"
+              }`}
+            >
+              Database Stats
+            </div>
+            <div
+              className={`text-sm flex items-center gap-2 px-3 py-2 rounded-lg ${
+                isDarkMode
+                  ? "bg-gray-700 text-gray-400"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              {indexedDocs} indexed
+            </div>
           </div>
         </div>
       </aside>
 
-      {/* Center Panel - ChatGPT style Chat Interface */}
-      <div className="flex-1 flex justify-center">
-        <div className="w-full max-w-3xl flex flex-col min-w-0">
-          <div className="rounded-xl border bg-card text-card-foreground shadow-lg h-full overflow-hidden flex flex-col">
-            {/* Optional Chat Header (ChatGPT vibe) */}
-            <div className="border-b px-6 py-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold">Assistant</h2>
-                <p className="text-xs text-muted-foreground">
-                  Multimodal RAG · {isOnline ? "Online" : "Offline mode"}
-                </p>
-              </div>
+        {/* User Area at bottom */}
+        <div
+          className={`p-3 border-t ${
+            isDarkMode ? "border-gray-700" : "border-gray-200"
+          }`}
+        >
+          <div
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+              isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+            }`}
+          >
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm">
+              U
             </div>
-
-            <div className="flex-1 min-h-0">
-              <div className="p-6 h-full">
-                <ChatUI
-                  messages={messages}
-                  onSend={handleSend}
-                  isTyping={isTyping}
-                />
-              </div>
+            <div
+              className={`text-sm font-medium ${
+                isDarkMode ? "text-gray-100" : "text-gray-900"
+              }`}
+            >
+              User
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </aside>
 
-    {/* Toggle Sidebar Button (ab sirf left sidebar ke liye) */}
-    <button
-      onClick={() => setShowSidebar(!showSidebar)}
-      className="hidden lg:flex fixed top-20 left-4 z-50 w-10 h-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-110 transition-transform"
-    >
-      {showSidebar ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-    </button>
+      {/* Main Content Area */}
+      <main
+        className={`flex-1 flex flex-col h-full relative min-w-0 ${
+          isDarkMode ? "bg-gray-900" : "bg-white"
+        }`}
+      >
+        {/* Top Navbar */}
+        <header
+          className={`h-14 flex items-center justify-between px-6 border-b ${
+            isDarkMode
+              ? "border-gray-700 bg-gray-800"
+              : "border-gray-200 bg-white"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSidebar(!showSidebar)}
+              className={`hidden lg:block p-2 rounded-lg transition-colors ${
+                isDarkMode
+                  ? "text-gray-400 hover:bg-gray-700"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              {showSidebar ? (
+                <X className="w-5 h-5" />
+              ) : (
+                <Menu className="w-5 h-5" />
+              )}
+            </button>
+            <h1
+              className={`text-lg font-semibold ${
+                isDarkMode ? "text-gray-100" : "text-gray-900"
+              }`}
+            >
+              Local AI Assistant
+            </h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                isDarkMode
+                  ? "bg-gray-700 text-yellow-400 hover:bg-gray-600"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+              title="Toggle dark mode"
+            >
+              {isDarkMode ? "☀️" : "🌙"}
+            </button>
+            <div
+              className={`px-3 py-1.5 rounded-full text-xs font-medium ${
+                isOnline
+                  ? "bg-green-100 text-green-700"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              {isOnline ? "● Online" : "○ Offline"}
+            </div>
+          </div>
+        </header>
 
-    {modalItem && (
-      <SourceModal item={modalItem} onClose={() => setModalItem(null)} />
-    )}
-  </div>
-);
+        {/* Chat Area */}
+        <div
+          className={`flex-1 overflow-hidden relative ${
+            isDarkMode ? "bg-gray-900" : "bg-white"
+          }`}
+        >
+          <ChatUI
+            messages={messages}
+            onSend={handleSend}
+            isTyping={isTyping}
+            onUploadComplete={handleUploadComplete}
+            isDarkMode={isDarkMode}
+          />
+        </div>
+      </main>
+
+      {/* Right Sidebar (Context) - Desktop only */}
+      {results.length > 0 && (
+        <aside
+          className={`w-80 border-l hidden xl:flex flex-col ${
+            isDarkMode
+              ? "border-gray-700 bg-gray-800"
+              : "border-gray-200 bg-white"
+          }`}
+        >
+          <div
+            className={`p-4 border-b font-semibold flex items-center justify-between ${
+              isDarkMode ? "border-gray-700" : "border-gray-200"
+            }`}
+          >
+            <span className={isDarkMode ? "text-gray-100" : "text-gray-900"}>
+              Sources
+            </span>
+            <span
+              className={`text-xs px-2 py-1 rounded-full font-medium ${
+                isDarkMode
+                  ? "bg-gray-700 text-gray-300"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              {results.length}
+            </span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            <ContextViewer
+              results={results}
+              onOpen={setModalItem}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+        </aside>
+      )}
 
 }
 

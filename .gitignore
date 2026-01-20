@@ -162,11 +162,6 @@ docker-compose.override.yml
 # -------------------------
 .DS_Store
 
-backend/storage/*
-!backend/storage/.gitkeep
-
-backend/models/*
-!backend/models/.gitkeep
-
-backend/whisper/*
-!backend/whisper/.gitkeep
+# Faiss index and metadata files
+backend/storage/faiss.index
+backend/storage/metadata.json 

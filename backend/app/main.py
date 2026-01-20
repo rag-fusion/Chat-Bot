@@ -116,10 +116,28 @@ async def ingest(file: UploadFile = File(...)):
             )
         
         if not chunks:
-            raise HTTPException(
-                status_code=422,
-                detail=f"No content could be extracted from {file.filename}. The file may be corrupted or in an unsupported format."
-            )
+            # If the uploaded file is audio, don't fail the whole ingestion when
+            # transcription cannot be performed (missing ASR/model). Instead,
+            # create a placeholder audio chunk so the file is still indexed and
+            # can be surfaced to the user with a message about transcription.
+            audio_exts = ('.mp3', '.wav', '.m4a', '.flac', '.ogg')
+            if file.filename.lower().endswith(audio_exts):
+                from .ingestion.base import Chunk
+                placeholder = Chunk(
+                    content="[Transcription unavailable: install a local ASR model (whisper or faster-whisper) to enable transcripts]",
+                    file_name=file.filename,
+                    file_type="audio",
+                    filepath=dest_path,
+                    timestamp=None
+                )
+                setattr(placeholder, 'start_ts', None)
+                setattr(placeholder, 'end_ts', None)
+                chunks = [placeholder]
+            else:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"No content could be extracted from {file.filename}. The file may be corrupted or in an unsupported format."
+                )
         
         # Generate embeddings and store using new vector store
         try:
@@ -162,14 +180,16 @@ async def ingest(file: UploadFile = File(...)):
                             'file_name': chunk.file_name,
                             'file_type': chunk.file_type,
                             'page_number': chunk.page_number,
-                            'timestamp': chunk.timestamp,
+                                'timestamp': chunk.timestamp,
+                                'start_ts': getattr(chunk, 'start_ts', None),
+                                'end_ts': getattr(chunk, 'end_ts', None),
                             'filepath': chunk.filepath,
                             'width': getattr(chunk, 'width', None),
                             'height': getattr(chunk, 'height', None),
                             'bbox': getattr(chunk, 'bbox', None),
                             'char_start': getattr(chunk, 'char_start', None),
                             'char_end': getattr(chunk, 'char_end', None),
-                            'modality': chunk.file_type
+                                'modality': chunk.file_type
                         }
                     })
             except Exception as e:
@@ -193,6 +213,8 @@ async def ingest(file: UploadFile = File(...)):
                         'file_type': chunk.file_type,
                         'page_number': chunk.page_number,
                         'timestamp': chunk.timestamp,
+                        'start_ts': getattr(chunk, 'start_ts', None),
+                        'end_ts': getattr(chunk, 'end_ts', None),
                         'filepath': chunk.filepath,
                         'width': getattr(chunk, 'width', None),
                         'height': getattr(chunk, 'height', None),
@@ -270,16 +292,34 @@ def query(payload: dict):
             file_type = r.get("modality", r.get("file_type", "text"))
             page_num = r.get("page_number")
             timestamp = r.get("timestamp")
-            
+            start_ts = r.get("start_ts")
+            end_ts = r.get("end_ts")
+
             # Build URL efficiently
             url = None
             if file_name:
                 base_path = f"/files/{file_name}"
                 if file_type == "pdf" and page_num is not None:
                     url = f"{base_path}#page={page_num}"
-                elif file_type == "audio" and timestamp:
-                    # URL-safe timestamp encoding
-                    url = f"{base_path}#t={timestamp.replace(':', '')}"
+                elif file_type == "audio":
+                    # Prefer numeric start_ts if available, otherwise fall back to timestamp string
+                    ts_str = None
+                    if start_ts is not None:
+                        # format seconds to HH:MM:SS
+                        try:
+                            s = int(start_ts)
+                            h = s // 3600
+                            m = (s % 3600) // 60
+                            sec = s % 60
+                            ts_str = f"{h:02d}:{m:02d}:{sec:02d}" if h > 0 else f"{m:02d}:{sec:02d}"
+                        except Exception:
+                            ts_str = None
+                    if not ts_str and timestamp:
+                        ts_str = timestamp
+                    if ts_str:
+                        url = f"{base_path}#timestamp={ts_str}"
+                    else:
+                        url = base_path
                 elif file_type == "image":
                     url = base_path
                 else:

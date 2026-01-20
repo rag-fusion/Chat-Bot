@@ -27,7 +27,9 @@ function TextResult({ result, onOpen }) {
       onClick={() => {
         if (result?.url) {
           window.open(
-            result.url.startsWith("http") ? result.url : `http://localhost:8000${result.url}`,
+            result.url.startsWith("http")
+              ? result.url
+              : `http://localhost:8000${result.url}`,
             "_blank"
           );
         } else {
@@ -61,7 +63,9 @@ function ImageResult({ result, onOpen }) {
       onClick={() => {
         if (result?.url) {
           window.open(
-            result.url.startsWith("http") ? result.url : `http://localhost:8000${result.url}`,
+            result.url.startsWith("http")
+              ? result.url
+              : `http://localhost:8000${result.url}`,
             "_blank"
           );
         } else {
@@ -115,7 +119,7 @@ function AudioResult({ result, onOpen }) {
   );
 }
 
-export default function ContextViewer({ results, onOpen }) {
+export default function ContextViewer({ results, onOpen, isDarkMode = false }) {
   // Filter results by type
   const textResults = results.filter(
     (r) => r.type === "text" || (!r.type && r.text)
