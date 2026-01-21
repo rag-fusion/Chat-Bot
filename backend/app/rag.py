@@ -41,7 +41,7 @@ def answer_query(cfg_path: str, query: str) -> dict:
         out_sources.append({
             "id": i,
             "file_name": s.get("file_name"),
-            "snippet": s.get("content"), # aligned with retriever output
+            "snippet": s.get("content") or s.get("page_content"), # aligned with retriever output
             "page_number": s.get("page_number"),
             "timestamp": s.get("timestamp"),
             "score": s.get("score"),

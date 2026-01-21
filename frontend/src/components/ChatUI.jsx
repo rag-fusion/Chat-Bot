@@ -1,4 +1,4 @@
-import { Mic, Send, Paperclip, X } from "lucide-react";
+import { Send, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Uploader from "./Uploader";
 import { API_BASE_URL } from "../config";
@@ -164,8 +164,7 @@ export default function ChatUI({
   // Dynamic placeholder based on context
   const getPlaceholder = () => {
     if (isTyping) return "Wait for response...";
-    if (messages.length === 0) return "Ask me anything about your documents...";
-    return "Send a message...";
+    return "Ask anything";
   };
 
   const Typing = () => (
@@ -232,40 +231,7 @@ export default function ChatUI({
               isDarkMode ? "bg-gray-900" : "bg-white"
             }`}
           >
-            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg flex items-center justify-center mb-6">
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="text-white"
-              >
-                <path
-                  d="M12 2L2 7L12 12L22 7L12 2Z"
-                  fill="currentColor"
-                  opacity="0.6"
-                />
-                <path
-                  d="M2 17L12 22L22 17V12L12 17L2 12V17Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </div>
-            <h2
-              className={`text-3xl font-semibold mb-2 ${
-                isDarkMode ? "text-gray-100" : "text-gray-900"
-              }`}
-            >
-              How can I help you today?
-            </h2>
-            <p
-              className={
-                isDarkMode ? "text-gray-400 text-sm" : "text-gray-500 text-sm"
-              }
-            >
-              Ask me anything about your documents
-            </p>
+             {/* Welcome message removed as requested */}
           </div>
         )}
 
@@ -335,16 +301,10 @@ export default function ChatUI({
         <div className="max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem] mx-auto">
           <form
             onSubmit={submit}
-            className={`relative flex items-end w-full rounded-3xl shadow-sm transition-all duration-300 py-2 ${
+            className={`relative flex items-center w-full rounded-full transition-all duration-300 py-3 px-4 ${
               isFocused
-                ? `border-2 border-blue-500 shadow-lg ring-2 ring-blue-100 ${
-                    isDarkMode ? "bg-gray-800" : "bg-white"
-                  }`
-                : `${
-                    isDarkMode
-                      ? "bg-gray-800 border-gray-700 hover:border-gray-600 hover:shadow-md"
-                      : "bg-white border border-gray-300 hover:border-gray-400 hover:shadow-md"
-                  }`
+                ? "bg-[#2f2f2f] ring-1 ring-gray-600"
+                : "bg-[#2f2f2f] hover:bg-[#3f3f3f]"
             }`}
           >
             <button
@@ -358,7 +318,7 @@ export default function ChatUI({
               title="Upload documents"
               disabled={isTyping}
             >
-              <Paperclip className="w-5 h-5" />
+              <Plus className="w-5 h-5" />
             </button>
             <textarea
               ref={inputRef}
@@ -374,13 +334,9 @@ export default function ChatUI({
               }}
               placeholder={getPlaceholder()}
               disabled={isTyping}
-              className={`w-full max-h-[200px] pr-24 bg-transparent border-none focus:ring-0 focus:outline-none outline-none resize-none text-base transition-all duration-200 ${
-                isDarkMode
-                  ? "placeholder-gray-500 text-gray-100"
-                  : "placeholder-gray-400 text-gray-900"
-              } ${isTyping ? "text-gray-400 cursor-not-allowed" : ""} ${
-                isOverLimit ? "text-red-600" : ""
-              }`}
+              className={`w-full max-h-[200px] pr-24 bg-transparent border-none focus:ring-0 focus:outline-none outline-none resize-none text-base transition-all duration-200 text-gray-200 placeholder-gray-400 ${
+                isTyping ? "text-gray-500 cursor-not-allowed" : ""
+              } ${isOverLimit ? "text-red-500" : ""}`}
               rows={1}
             />
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
@@ -399,19 +355,7 @@ export default function ChatUI({
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => alert("Voice input coming soon!")}
-                className={`p-2 rounded-lg transition-all duration-200 transform hover:scale-110 ${
-                  isDarkMode
-                    ? "text-gray-400 hover:bg-gray-700 hover:text-green-400"
-                    : "text-gray-400 hover:bg-gray-100 hover:text-green-500"
-                }`}
-                title="Voice input (placeholder)"
-                disabled={isTyping}
-              >
-                <Mic className="w-5 h-5" />
-              </button>
+
               <button
                 type="submit"
                 disabled={!input.trim() || isTyping || isOverLimit}

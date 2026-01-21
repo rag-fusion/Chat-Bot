@@ -117,6 +117,7 @@ export function Auth({ onLogin }) {
 
         <div className="mt-4 text-center">
           <button
+            type="button"
             onClick={() => setIsLogin(!isLogin)}
             className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
           >

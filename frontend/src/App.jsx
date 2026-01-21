@@ -4,12 +4,21 @@ import ChatUI from "./components/ChatUI";
 import ContextViewer from "./components/ContextViewer";
 import SourceModal from "./components/SourceModal";
 import { Auth } from "./components/Auth";
+import LandingPage from "./components/LandingPage";
 import { Sheet, SheetContent, SheetTrigger } from "./components/ui/sheet";
-import { Menu, X, Database, LogOut } from "lucide-react";
+import { DialogTitle, DialogDescription } from "./components/ui/dialog";
+import { PanelLeft, X, Database, LogOut, SquarePen } from "lucide-react";
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem("user") || "null"));
+  const [user, setUser] = useState(() => {
+    try {
+        const item = localStorage.getItem("user");
+        return (item && item !== "undefined") ? JSON.parse(item) : null;
+    } catch (e) {
+        return null;
+    }
+  });
   
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
@@ -20,6 +29,7 @@ function App() {
   const [indexedDocs, setIndexedDocs] = useState(0);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
+
   // Real Chat History
   const [chatHistory, setChatHistory] = useState([]);
   const [currentChatId, setCurrentChatId] = useState(null);
@@ -29,6 +39,12 @@ function App() {
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    
+    // Cleanup URL hash if present
+    if (window.location.hash) {
+      window.history.replaceState(null, null, ' ');
+    }
+
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -46,7 +62,11 @@ function App() {
       setToken(data.access_token);
       setUser(data.user);
       localStorage.setItem("token", data.access_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      if (data.user) {
+          localStorage.setItem("user", JSON.stringify(data.user));
+      } else {
+          localStorage.removeItem("user");
+      }
   };
 
   const handleLogout = () => {
@@ -56,6 +76,7 @@ function App() {
       localStorage.removeItem("user");
       setMessages([]);
       setChatHistory([]);
+      setShowLanding(true);
   };
 
   const fetchHistory = async () => {
@@ -235,7 +256,7 @@ function App() {
   };
 
   if (!token) {
-      return <Auth onLogin={handleLogin} />;
+      return <LandingPage onLogin={handleLogin} />;
   }
 
   return (
@@ -245,25 +266,28 @@ function App() {
         <Sheet>
           <SheetTrigger asChild>
             <button className={`p-2 rounded-md ${isDarkMode ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>
-              <Menu className="w-5 h-5" />
+              <PanelLeft className="w-5 h-5" />
             </button>
           </SheetTrigger>
           <SheetContent side="left" className={`w-[280px] p-0 border-r ${isDarkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"}`}>
+            <div className="sr-only">
+              <DialogTitle>Navigation Menu</DialogTitle>
+              <DialogDescription>Access chat history and new chat options</DialogDescription>
+            </div>
             <div className="p-3 flex-1 overflow-y-auto flex flex-col h-full">
-              <button onClick={startNewChat} className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border mb-4 ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-100"}`}>
-                <span className="text-lg">+</span> New Chat
-              </button>
-              
-              <div className="mb-6 flex-1">
-                  <div className="text-xs font-semibold mb-2 px-2 opacity-70">Chat History</div>
-                  <div className="space-y-1">
-                      {chatHistory.map((chat) => (
-                          <div key={chat.id} onClick={() => loadChat(chat.id)} className={`px-3 py-2 rounded-lg cursor-pointer truncate ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} ${currentChatId === chat.id ? "bg-blue-100 dark:bg-blue-900" : ""}`}>
-                              {chat.title}
-                          </div>
-                      ))}
-                  </div>
+              <div className="flex items-center justify-between px-4 py-3 mb-4">
+                <div className="flex items-center gap-2">
+                   <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                   </div>
+                   <span className="font-semibold text-lg">ChatBot</span>
+                </div>
+                <button onClick={startNewChat} className={`p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-gray-700 text-gray-400 hover:text-gray-100" : "hover:bg-gray-100 text-gray-600 hover:text-gray-900"}`} title="New Chat">
+                  <SquarePen className="w-5 h-5" />
+                </button>
               </div>
+              
+
 
                {/* User Area */}
                <div className={`border-t pt-3 ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
@@ -287,27 +311,26 @@ function App() {
       {/* Sidebar (Desktop) */}
       <aside className={`${showSidebar ? "w-[260px]" : "w-0"} hidden lg:flex flex-col transition-all duration-300 border-r ${isDarkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"}`}>
         <div className="p-3 flex-1 overflow-y-auto flex flex-col">
-          <button onClick={startNewChat} className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border mb-6 ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-100"}`}>
-            <span className="text-lg">+</span> New Chat
-          </button>
-          
-          <div className="mb-6 flex-1">
-            <div className="text-xs font-semibold mb-3 px-2 opacity-70">Chat History</div>
-            <div className="space-y-1">
-              {chatHistory.map((chat) => (
-                <div key={chat.id} onClick={() => loadChat(chat.id)} className={`px-3 py-2 rounded-lg cursor-pointer truncate text-sm ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} ${currentChatId === chat.id ? "bg-blue-50 dark:bg-blue-900/50" : ""}`}>
-                  {chat.title}
-                </div>
-              ))}
+          <div className="flex items-center justify-between px-3 py-3 mb-2">
+            <div className={`flex items-center gap-2 transition-opacity duration-300 ${!showSidebar && "opacity-0"}`}>
+               <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+               </div>
+               <span className="font-semibold text-lg">ChatBot</span>
             </div>
+            <button onClick={() => setShowSidebar(!showSidebar)} className={`p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-gray-700 text-gray-400 hover:text-gray-100" : "hover:bg-gray-100 text-gray-600 hover:text-gray-900"}`} title="Close Sidebar">
+              <PanelLeft className="w-5 h-5" />
+            </button>
           </div>
 
-          <div className="px-2 mb-4">
-             <div className="text-xs font-semibold mb-2 opacity-70">Database Stats</div>
-             <div className={`text-sm flex items-center gap-2 px-3 py-2 rounded-lg ${isDarkMode ? "bg-gray-700 text-gray-400" : "bg-gray-100 text-gray-600"}`}>
-               <Database className="w-4 h-4" /> {indexedDocs} indexed
-             </div>
-          </div>
+          <button onClick={startNewChat} className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-colors mb-2 ${isDarkMode ? "hover:bg-gray-700 text-gray-100" : "hover:bg-gray-100 text-gray-900"}`}>
+              <SquarePen className="w-4 h-4" />
+              <span>New chat</span>
+          </button>
+          
+
+
+
         </div>
 
         {/* User Area at bottom */}
@@ -330,10 +353,12 @@ function App() {
       <main className={`flex-1 flex flex-col h-full relative min-w-0 ${isDarkMode ? "bg-gray-900" : "bg-white"}`}>
         <header className={`h-14 flex items-center justify-between px-6 border-b ${isDarkMode ? "border-gray-700 bg-gray-800" : "border-gray-200 bg-white"}`}>
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowSidebar(!showSidebar)} className={`hidden lg:block p-2 rounded-lg ${isDarkMode ? "text-gray-400 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"}`}>
-              {showSidebar ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <h1 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>Local AI Assistant</h1>
+            {!showSidebar && (
+              <button onClick={() => setShowSidebar(!showSidebar)} className={`hidden lg:block p-2 rounded-lg ${isDarkMode ? "text-gray-400 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"}`}>
+                <PanelLeft className="w-5 h-5" />
+              </button>
+            )}
+
           </div>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsDarkMode(!isDarkMode)} className={`px-3 py-1.5 rounded-full text-sm ${isDarkMode ? "bg-gray-700 text-yellow-400" : "bg-gray-100 text-gray-700"}`} title="Toggle dark mode">{isDarkMode ? "☀️" : "🌙"}</button>
