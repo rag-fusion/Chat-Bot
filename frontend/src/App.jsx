@@ -7,7 +7,9 @@ import { Auth } from "./components/Auth";
 import LandingPage from "./components/LandingPage";
 import { Sheet, SheetContent, SheetTrigger } from "./components/ui/sheet";
 import { DialogTitle, DialogDescription } from "./components/ui/dialog";
-import { PanelLeft, X, Database, LogOut, SquarePen } from "lucide-react";
+import UserMenu from "./components/UserMenu";
+import ProfileModal from "./components/ProfileModal";
+import { PanelLeft, X, Database, LogOut, SquarePen, Sun, Moon } from "lucide-react";
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
@@ -28,6 +30,7 @@ function App() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [indexedDocs, setIndexedDocs] = useState(0);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
 
   // Real Chat History
@@ -55,15 +58,48 @@ function App() {
   useEffect(() => {
     if (token) {
         fetchHistory();
+        
+        // Refresh user data if missing or incomplete
+        if (!user || !user.email) {
+            fetch(`${API_BASE_URL}/api/auth/me`, {
+                   headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(res => res.ok ? res.json() : null)
+            .then(u => {
+                if (u) {
+                    setUser(u);
+                    localStorage.setItem("user", JSON.stringify(u));
+                }
+            })
+            .catch(err => console.error("Failed to refresh user", err));
+        }
     }
   }, [token]);
 
-  const handleLogin = (data) => {
-      setToken(data.access_token);
-      setUser(data.user);
-      localStorage.setItem("token", data.access_token);
-      if (data.user) {
-          localStorage.setItem("user", JSON.stringify(data.user));
+  const handleLogin = async (data) => {
+      let userData = data.user;
+      const accessToken = data.access_token;
+      
+      setToken(accessToken);
+      localStorage.setItem("token", accessToken);
+
+      if (!userData) {
+           // Fallback: fetch user me
+           try {
+               const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+                   headers: { 'Authorization': `Bearer ${accessToken}` }
+               });
+               if (res.ok) {
+                   userData = await res.json();
+               }
+           } catch (e) {
+               console.error("Failed to fetch user info", e);
+           }
+      }
+
+      setUser(userData);
+      if (userData) {
+          localStorage.setItem("user", JSON.stringify(userData));
       } else {
           localStorage.removeItem("user");
       }
@@ -77,6 +113,28 @@ function App() {
       setMessages([]);
       setChatHistory([]);
       setShowLanding(true);
+  };
+
+  const handleUpdateProfile = async (updatedData) => {
+      // Optimistic update
+      const newUser = { ...user, ...updatedData };
+      setUser(newUser);
+      localStorage.setItem("user", JSON.stringify(newUser));
+      
+      // Attempt backend update if endpoint exists (mocked for now as we don't have PUT /api/auth/me confirmed)
+      // If backend supports it:
+      /*
+      try {
+        await fetch(`${API_BASE_URL}/api/auth/me`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` 
+            },
+            body: JSON.stringify(updatedData)
+        });
+      } catch(e) { console.error(e); }
+      */
   };
 
   const fetchHistory = async () => {
@@ -290,18 +348,8 @@ function App() {
 
 
                {/* User Area */}
-               <div className={`border-t pt-3 ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
-                <div className="flex items-center justify-between px-3 py-2">
-                   <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
-                            {user?.full_name?.[0] || user?.email?.[0] || "U"}
-                        </div>
-                        <div className="text-sm font-medium truncate max-w-[120px]">
-                            {user?.full_name || "User"}
-                        </div>
-                   </div>
-                   <button onClick={handleLogout} className="text-red-500 hover:text-red-700"><LogOut className="w-4 h-4"/></button>
-                </div>
+               <div className={`border-t pt-2 pb-2 ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
+                   <UserMenu user={user} onLogout={handleLogout} isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode(!isDarkMode)} onEditProfile={() => setIsProfileOpen(true)} />
               </div>
             </div>
           </SheetContent>
@@ -335,17 +383,7 @@ function App() {
 
         {/* User Area at bottom */}
         <div className={`p-3 border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
-           <div className="flex items-center justify-between px-3 py-2">
-               <div className="flex items-center gap-3 overflow-hidden">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold shrink-0">
-                        {user?.full_name?.[0] || user?.email?.[0] || "U"}
-                    </div>
-                    <div className="text-sm font-medium truncate">
-                        {user?.full_name || "User"}
-                    </div>
-               </div>
-               <button onClick={handleLogout} title="Logout" className="text-red-500 hover:text-red-700"><LogOut className="w-4 h-4"/></button>
-           </div>
+           <UserMenu user={user} onLogout={handleLogout} isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode(!isDarkMode)} onEditProfile={() => setIsProfileOpen(true)} />
         </div>
       </aside>
 
@@ -360,12 +398,7 @@ function App() {
             )}
 
           </div>
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsDarkMode(!isDarkMode)} className={`px-3 py-1.5 rounded-full text-sm ${isDarkMode ? "bg-gray-700 text-yellow-400" : "bg-gray-100 text-gray-700"}`} title="Toggle dark mode">{isDarkMode ? "☀️" : "🌙"}</button>
-            <div className={`px-3 py-1.5 rounded-full text-xs font-medium ${isOnline ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-              {isOnline ? "● Online" : "○ Offline"}
-            </div>
-          </div>
+
         </header>
 
         <div className={`flex-1 overflow-hidden relative ${isDarkMode ? "bg-gray-900" : "bg-white"}`}>
@@ -387,6 +420,13 @@ function App() {
       )}
 
       <SourceModal item={modalItem} onClose={() => setModalItem(null)} />
+      <ProfileModal 
+        isOpen={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)} 
+        user={user} 
+        onSave={handleUpdateProfile} 
+        isDarkMode={isDarkMode} 
+      />
     </div>
   );
 }

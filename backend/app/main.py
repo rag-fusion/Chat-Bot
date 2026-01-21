@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import chat, upload, files, auth, history
 from .database import connect_to_mongo, close_mongo_connection
@@ -22,6 +23,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files
+storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "storage"))
+if not os.path.exists(storage_dir):
+    try:
+        os.makedirs(storage_dir)
+    except Exception:
+        pass
+app.mount("/static", StaticFiles(directory=storage_dir), name="static")
 
 # Event Handlers
 app.add_event_handler("startup", connect_to_mongo)

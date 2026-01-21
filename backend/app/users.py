@@ -38,3 +38,13 @@ class User:
         result = await db.db.users.insert_one(user_doc)
         user_doc["_id"] = result.inserted_id
         return user_doc
+
+    @staticmethod
+    async def update_user(email: str, update_data: dict):
+        if db.db is None: raise Exception("Database not connected")
+        
+        result = await db.db.users.update_one(
+            {"email": email},
+            {"$set": update_data}
+        )
+        return result.modified_count > 0
