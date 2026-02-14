@@ -77,3 +77,13 @@ class ChatHistory:
             {"_id": ObjectId(chat_id)},
             {"$set": {"title": title}}
         )
+    
+    @staticmethod
+    async def delete_chat(chat_id: str, user_id: str):
+        if db.db is None: return None
+        result = await db.db.chats.delete_one({
+            "_id": ObjectId(chat_id),
+            "user_id": ObjectId(user_id)
+        })
+        return result.deleted_count > 0
+

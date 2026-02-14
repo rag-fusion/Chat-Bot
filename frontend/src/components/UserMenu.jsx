@@ -30,7 +30,7 @@ export default function UserMenu({ user, onLogout, isDarkMode, onToggleTheme, on
         <div className="flex items-center gap-3 overflow-hidden text-left">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold shrink-0 overflow-hidden">
              {user?.avatar_url ? (
-               <img src={`${API_BASE_URL}${user.avatar_url}`} alt="Avatar" className="w-full h-full object-cover" />
+               <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
              ) : (
                 user?.full_name?.[0] || user?.email?.[0] || "U"
              )}
