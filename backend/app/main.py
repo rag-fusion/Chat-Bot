@@ -34,7 +34,24 @@ if not os.path.exists(storage_dir):
 app.mount("/static", StaticFiles(directory=storage_dir), name="static")
 
 # Event Handlers
-app.add_event_handler("startup", connect_to_mongo)
+# Event Handlers
+@app.on_event("startup")
+async def startup_event():
+    import torch
+    import logging
+    logger = logging.getLogger("uvicorn")
+    
+    logger.info("=" * 50)
+    logger.info("Startup Check:")
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        logger.info(f"✅ GPU detected: {gpu_name}")
+        logger.info(f"CUDA Version: {torch.version.cuda}")
+    else:
+        logger.warning("⚠️ GPU NOT DETECTED. Running in CPU mode.")
+    logger.info("=" * 50)
+    await connect_to_mongo()
+
 app.add_event_handler("shutdown", close_mongo_connection)
 
 class QueryRequest(BaseModel):
