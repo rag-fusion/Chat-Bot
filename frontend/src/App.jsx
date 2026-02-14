@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetTrigger } from "./components/ui/sheet";
 import { DialogTitle, DialogDescription } from "./components/ui/dialog";
 import UserMenu from "./components/UserMenu";
 import ProfileModal from "./components/ProfileModal";
+import ChatHistoryItem from "./components/ChatHistoryItem";
 import { PanelLeft, X, Database, LogOut, SquarePen, Sun, Moon } from "lucide-react";
 
 function App() {
@@ -200,6 +201,42 @@ function App() {
       }
   };
 
+  const handleRenameChat = async (chatId, newTitle) => {
+      try {
+          const res = await fetch(`${API_BASE_URL}/api/chat/${chatId}`, {
+              method: 'PATCH',
+              headers: { 
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ title: newTitle })
+          });
+          if (res.ok) {
+              fetchHistory(); // Refresh list
+          }
+      } catch (e) {
+          console.error("Failed to rename chat", e);
+      }
+  };
+
+  const handleDeleteChat = async (chatId) => {
+      try {
+          const res = await fetch(`${API_BASE_URL}/api/chat/${chatId}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+              fetchHistory(); // Refresh list
+              // If deleting current chat, start new one
+              if (currentChatId === chatId) {
+                  startNewChat();
+              }
+          }
+      } catch (e) {
+          console.error("Failed to delete chat", e);
+      }
+  };
+
   const handleSend = async (text) => {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setIsTyping(true);
@@ -345,7 +382,20 @@ function App() {
                 </button>
               </div>
               
-
+              {/* Chat History List */}
+              <div className="flex-1 overflow-y-auto space-y-1 mb-2">
+                {chatHistory.map((chat) => (
+                  <ChatHistoryItem
+                    key={chat.id}
+                    chat={chat}
+                    isActive={currentChatId === chat.id}
+                    onClick={() => loadChat(chat.id)}
+                    onRename={(newTitle) => handleRenameChat(chat.id, newTitle)}
+                    onDelete={() => handleDeleteChat(chat.id)}
+                    isDarkMode={isDarkMode}
+                  />
+                ))}
+              </div>
 
                {/* User Area */}
                <div className={`border-t pt-2 pb-2 ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
@@ -376,8 +426,20 @@ function App() {
               <span>New chat</span>
           </button>
           
-
-
+          {/* Chat History List */}
+          <div className="flex-1 overflow-y-auto space-y-1">
+            {chatHistory.map((chat) => (
+              <ChatHistoryItem
+                key={chat.id}
+                chat={chat}
+                isActive={currentChatId === chat.id}
+                onClick={() => loadChat(chat.id)}
+                onRename={(newTitle) => handleRenameChat(chat.id, newTitle)}
+                onDelete={() => handleDeleteChat(chat.id)}
+                isDarkMode={isDarkMode}
+              />
+            ))}
+          </div>
 
         </div>
 

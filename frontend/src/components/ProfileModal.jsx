@@ -116,7 +116,7 @@ export default function ProfileModal({ isOpen, onClose, user, onSave, isDarkMode
                         {avatarPreview ? (
                             <img src={avatarPreview} alt="Avatar Preview" className="w-full h-full object-cover" />
                         ) : (user?.avatar_url ? (
-                            <img src={`${API_BASE_URL}${user.avatar_url}`} alt="Avatar" className="w-full h-full object-cover" />
+                            <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                         ) : (
                             displayName ? (displayName.length > 1 ? displayName.substring(0,2).toUpperCase() : displayName[0].toUpperCase()) : "U"
                         ))}
