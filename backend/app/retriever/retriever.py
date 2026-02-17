@@ -1,38 +1,75 @@
 """
-Enhanced retrieval with reranking capabilities.
+Enhanced retrieval with reranking, session isolation, and NTRO safeguards.
 """
 
 from __future__ import annotations
 
 import numpy as np
+import faiss
 from typing import List, Dict, Any, Optional
 from ..embeddings import embed_text
 from ..vector_store import get_store
 
 
 class Retriever:
-    """Enhanced retriever with reranking capabilities."""
+    """Enhanced retriever with session isolation and reranking."""
     
     def __init__(self, store=None):
         self.store = store or get_store()
     
-    def retrieve(self, query_text: str, top_k: int = 10, modality_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieve and rerank results for a query."""
-        # Generate query embedding
+    def retrieve(self, 
+                 query_text: str, 
+                 chat_id: str,
+                 top_k: int = 10, 
+                 modality_filter: Optional[str] = None, 
+                 min_score: float = 0.65, 
+                 session_files: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieve and rerank results for a query within a specific session.
+        
+        Args:
+            query_text: The search query.
+            chat_id: The session/chat ID to search within.
+            top_k: Number of results to return.
+            modality_filter: Optional filter for 'text', 'image', etc.
+            min_score: Minimum similarity score (cosine similarity since normalized).
+            session_files: (Deprecated/Legacy) prioritized files.
+        """
+        if not chat_id:
+            return []
+
+        # 1. Generate query embedding
         query_embedding = embed_text(query_text)
         
-        # Search with higher k for reranking
-        search_k = min(top_k * 3, self.store.index.ntotal)
-        results = self.store.search(query_embedding, search_k)
+        # 2. Normalize Query (Store.search also does this, but good to be explicit/safe)
+        # Note: faiss key in store handles normalization, so strict double norm is fine but redundant.
+        # We rely on store.search to handle it correctly.
         
-        # Filter by modality if specified
+        # 3. Search in Session Index
+        # Fetch more candidates for filtering/reranking
+        search_k = min(top_k * 5, 100) 
+        
+        try:
+            results = self.store.search(query_embedding, search_k, session_id=chat_id)
+        except Exception as e:
+            # Handle case where session index doesn't exist yet
+            print(f"Search warning for session {chat_id}: {e}")
+            return []
+        
+        # 4. Filter by Modality
         if modality_filter:
             results = [r for r in results if r.get('modality') == modality_filter]
         
-        # Rerank results
-        reranked = self.rerank_results(query_text, results)
+        # 5. Filter by Score Threshold (NTRO Requirement)
+        # IndexFlatIP with normalized vectors = Cosine Similarity (-1 to 1)
+        filtered = [r for r in results if r.get('score', 0) >= min_score]
         
-        # Return top k
+        if not filtered:
+            return []
+        
+        # 6. Rerank Results
+        reranked = self.rerank_results(query_text, filtered)
+        
         return reranked[:top_k]
     
     def rerank_results(self, query: str, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -40,83 +77,32 @@ class Retriever:
         if not results:
             return results
         
-        # Simple reranking based on multiple factors
         for result in results:
             score = result.get('score', 0.0)
             
-            # Boost score for exact matches in content
+            # Boost score for exact matches
             content = (result.get('page_content') or result.get('content', '')).lower()
             query_lower = query.lower()
             if query_lower in content:
                 score += 0.1
             
-            # Boost score for title/filename matches
+            # Boost score for title matches
             file_name = result.get('file_name', '').lower()
             if any(word in file_name for word in query_lower.split()):
                 score += 0.05
             
-            # Boost score for recent content (if timestamp available)
-            timestamp = result.get('timestamp')
-            if timestamp:
-                score += 0.02
-            
-            # Boost score for specific modalities
-            modality = result.get('modality', 'text')
-            if modality == 'image':
-                score += 0.03  # Images often contain important information
+            # Boost score for images (often high value)
+            if result.get('modality') == 'image':
+                score += 0.03
             
             result['rerank_score'] = score
         
         # Sort by rerank score
         results.sort(key=lambda x: x.get('rerank_score', 0), reverse=True)
         return results
-    
-    def retrieve_cross_modal(self, query_text: str, top_k: int = 10) -> Dict[str, List[Dict[str, Any]]]:
-        """Retrieve results grouped by modality."""
-        all_results = self.retrieve(query_text, top_k * 2)
-        
-        # Group by modality
-        grouped = {}
-        for result in all_results:
-            modality = result.get('modality', 'text')
-            if modality not in grouped:
-                grouped[modality] = []
-            grouped[modality].append(result)
-        
-        # Limit each modality
-        for modality in grouped:
-            grouped[modality] = grouped[modality][:top_k]
-        
-        return grouped
-    
-    def find_similar_across_modalities(self, result: Dict[str, Any], threshold: float = 0.8) -> List[Dict[str, Any]]:
-        """Find similar content across different modalities."""
-        content = result.get('content', '')
-        if not content:
-            return []
-        
-        # Generate embedding for the content
-        content_embedding = embed_text(content)
-        
-        # Search for similar content
-        similar = self.store.search(content_embedding, top_k=20)
-        
-        # Filter by threshold and different modalities
-        filtered = []
-        original_modality = result.get('modality', 'text')
-        
-        for sim_result in similar:
-            if (sim_result.get('score', 0) >= threshold and 
-                sim_result.get('modality') != original_modality and
-                sim_result.get('vector_id') != result.get('vector_id')):
-                filtered.append(sim_result)
-        
-        return filtered
-
 
 # Global retriever instance
 _retriever_instance: Optional[Retriever] = None
-
 
 def get_retriever() -> Retriever:
     """Get global retriever instance."""
@@ -125,12 +111,6 @@ def get_retriever() -> Retriever:
         _retriever_instance = Retriever()
     return _retriever_instance
 
-
-def retrieve(query_text: str, top_k: int = 10, modality_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+def retrieve(query_text: str, chat_id: str, top_k: int = 10, modality_filter: Optional[str] = None, min_score: float = 0.65) -> List[Dict[str, Any]]:
     """Retrieve results using global retriever."""
-    return get_retriever().retrieve(query_text, top_k, modality_filter)
-
-
-def rerank_results(query: str, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Rerank results using global retriever."""
-    return get_retriever().rerank_results(query, results)
+    return get_retriever().retrieve(query_text, chat_id, top_k=top_k, modality_filter=modality_filter, min_score=min_score)

@@ -1,248 +1,232 @@
 """
-Enhanced FAISS vector store with proper persistence and metadata handling.
+Enhanced FAISS vector store with session isolation, proper persistence, and NTRO-level safeguards.
 """
 
 from __future__ import annotations
 
 import os
 import json
-import sqlite3
-from contextlib import contextmanager
-from typing import Dict, List, Optional, Any
+import shutil
+from typing import Dict, List, Optional, Any, Tuple
 import faiss
 import numpy as np
 
+# Global cache for active session stores to avoid constant disk I/O
+# session_id -> {index: faiss.Index, metadata: dict}
+_active_sessions: Dict[str, Dict[str, Any]] = {}
 
 class FAISSStore:
-    """Enhanced FAISS vector store with metadata persistence."""
+    """Session-isolated FAISS vector store with enhanced safeguards."""
     
     def __init__(self, dimension: int = 512, storage_dir: str = None):
         self.dimension = dimension
         self.storage_dir = storage_dir or os.path.join(os.path.dirname(__file__), "..", "..", "storage")
-        self.index_path = os.path.join(self.storage_dir, "faiss.index")
-        self.metadata_path = os.path.join(self.storage_dir, "metadata.json")
-        self.db_path = os.path.join(self.storage_dir, "metadata.db")
-        self.index = None
-        self.metadata = {}
+        self.sessions_dir = os.path.join(self.storage_dir, "sessions")
         self._ensure_storage()
-        self._load_or_init()
     
     def _ensure_storage(self):
         """Ensure storage directory exists."""
-        os.makedirs(self.storage_dir, exist_ok=True)
+        os.makedirs(self.sessions_dir, exist_ok=True)
     
-    def _load_or_init(self):
-        """Load existing index or create new one with dimension migration support."""
-        if os.path.exists(self.index_path):
+    def _get_session_paths(self, session_id: str) -> Tuple[str, str]:
+        """Get paths for session index and metadata."""
+        session_dir = os.path.join(self.sessions_dir, session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        return (
+            os.path.join(session_dir, "index.faiss"),
+            os.path.join(session_dir, "metadata.json")
+        )
+
+    def _load_session(self, session_id: str) -> Dict[str, Any]:
+        """Load session index and metadata, or create new."""
+        # Return cached if available
+        if session_id in _active_sessions:
+            return _active_sessions[session_id]
+
+        index_path, metadata_path = self._get_session_paths(session_id)
+        
+        # Load or create index
+        if os.path.exists(index_path):
             try:
-                self.index = faiss.read_index(self.index_path)
-                loaded_dim = self.index.d
-                self._load_metadata()
-                
-                # Check if dimension mismatch (old 384-dim index)
-                if loaded_dim != self.dimension:
-                    print(f"Warning: Existing index has dimension {loaded_dim}, but expected {self.dimension}.")
-                    print("The index will be migrated. Old index backed up to faiss.index.backup")
-                    # Backup old index
-                    import shutil
-                    backup_path = self.index_path + ".backup"
-                    if not os.path.exists(backup_path):
-                        shutil.copy2(self.index_path, backup_path)
-                    # Create new index with correct dimension
-                    self.index = faiss.IndexFlatIP(self.dimension)
-                    # Note: Old vectors cannot be migrated automatically - they need re-indexing
-                    print("Please re-index your documents to migrate to the new dimension.")
-                    print("Or run: python backend/scripts/migrate_to_clip.py")
+                index = faiss.read_index(index_path)
+                # Verify dimension
+                if index.d != self.dimension:
+                    print(f"Warning: Session {session_id} index dimension mismatch ({index.d} vs {self.dimension}). Resetting.")
+                    index = self._create_new_index()
             except Exception as e:
-                print(f"Error loading index: {e}. Creating new index.")
-                self.index = faiss.IndexFlatIP(self.dimension)
-                self.metadata = {}
+                print(f"Error loading index for session {session_id}: {e}. Creating new.")
+                index = self._create_new_index()
         else:
-            self.index = faiss.IndexFlatIP(self.dimension)
-            self.metadata = {}
-    
-    def _load_metadata(self):
-        """Load metadata from JSON file."""
-        if os.path.exists(self.metadata_path):
-            with open(self.metadata_path, 'r', encoding='utf-8') as f:
-                self.metadata = json.load(f)
-        else:
-            self.metadata = {}
-    
-    def _save_metadata(self):
-        """Save metadata to JSON file."""
-        with open(self.metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(self.metadata, f, indent=2, ensure_ascii=False)
-    
-    def upsert(self, items: List[Dict[str, Any]]) -> int:
-        """Upsert items with embeddings and metadata."""
-        if not items:
+            index = self._create_new_index()
+
+        # Load or create metadata
+        metadata = {}
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+            except Exception as e:
+                print(f"Error loading metadata for session {session_id}: {e}. Resetting.")
+                metadata = {}
+
+        session_data = {"index": index, "metadata": metadata}
+        _active_sessions[session_id] = session_data
+        return session_data
+
+    def _create_new_index(self) -> faiss.Index:
+        """Create a new IndexIDMap2 wrapped IndexFlatIP."""
+        # IndexFlatIP uses Inner Product (Cosine Similarity if normalized)
+        quantizer = faiss.IndexFlatIP(self.dimension)
+        # IndexIDMap2 enables add_with_ids
+        return faiss.IndexIDMap2(quantizer)
+
+    def _save_session(self, session_id: str):
+        """Save session index and metadata to disk."""
+        if session_id not in _active_sessions:
+            return
+
+        session_data = _active_sessions[session_id]
+        index_path, metadata_path = self._get_session_paths(session_id)
+        
+        # Save index
+        faiss.write_index(session_data["index"], index_path)
+        
+        # Save metadata
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(session_data["metadata"], f, indent=2, ensure_ascii=False)
+
+    def upsert(self, items: List[Dict[str, Any]], session_id: str) -> int:
+        """Upsert items with embedding normalization using add_with_ids."""
+        if not items or not session_id:
             return 0
         
-        embeddings = []
-        metadatas = []
+        session_data = self._load_session(session_id)
+        index = session_data["index"]
+        metadata_store = session_data["metadata"]
         
-        for item in items:
+        embeddings = []
+        ids = []
+        new_metadatas = []
+        
+        # Determine start ID (simple auto-increment based on dict size / max key)
+        # Using max integer key to ensure uniqueness even if some deleted
+        start_id = 0
+        if metadata_store:
+            try:
+                # Keys are stored as strings in JSON, need conversion
+                int_keys = [int(k) for k in metadata_store.keys()]
+                if int_keys:
+                    start_id = max(int_keys) + 1
+            except:
+                start_id = len(metadata_store)
+
+        for i, item in enumerate(items):
             embedding = item.get('embedding')
             if embedding is None:
                 continue
             
-            # Validate embedding dimension
-            if isinstance(embedding, np.ndarray):
-                if embedding.ndim == 1:
-                    if embedding.shape[0] != self.dimension:
-                        raise ValueError(
-                            f"Embedding dimension mismatch: got {embedding.shape[0]}, "
-                            f"expected {self.dimension}. Ensure all embeddings use CLIP (512-dim)."
-                        )
-                elif embedding.ndim == 2:
-                    if embedding.shape[1] != self.dimension:
-                        raise ValueError(
-                            f"Embedding dimension mismatch: got {embedding.shape[1]}, "
-                            f"expected {self.dimension}."
-                        )
-                    # Flatten batch dimension - take first element
-                    embedding = embedding[0]
+            # 1. Validate Dimension
+            embedding = np.array(embedding, dtype=np.float32)
+            if embedding.ndim == 1:
+                embedding = embedding.reshape(1, -1)
             
-            embeddings.append(embedding)
-            metadatas.append(item.get('metadata', {}))
-        
+            if embedding.shape[1] != self.dimension:
+                print(f"Skipping embedding with wrong dimension: {embedding.shape}")
+                continue
+            
+            # 2. Normalize Embedding (L2) - Vital for Cosine Similarity with IndexFlatIP
+            faiss.normalize_L2(embedding)
+            
+            vector_id = start_id + i
+            embeddings.append(embedding[0]) # Flatten for list
+            ids.append(vector_id)
+            
+            # Prepare metadata
+            meta = item.get('metadata', {})
+            new_metadatas.append({
+                'vector_id': vector_id,
+                'session_id': session_id,
+                'page_content': meta.get('page_content') or meta.get('content', ''),
+                'file_name': meta.get('file_name', ''),
+                'file_type': meta.get('file_type', ''),
+                'modality': meta.get('modality', 'text'), # Explicit modality
+                'page_number': meta.get('page_number'),
+                'timestamp': meta.get('timestamp'),
+                'filepath': meta.get('filepath'),
+                'width': meta.get('width'),
+                'height': meta.get('height'),
+                'bbox': meta.get('bbox')
+            })
+
         if not embeddings:
             return 0
         
+        # 3. Add to Index with IDs
         embeddings_array = np.array(embeddings).astype(np.float32)
-        start_id = self.index.ntotal
+        ids_array = np.array(ids).astype(np.int64)
         
-        # Add to FAISS index
-        self.index.add(embeddings_array)
+        index.add_with_ids(embeddings_array, ids_array)
         
-        # Store metadata
-        for i, metadata in enumerate(metadatas):
-            vector_id = start_id + i
-            self.metadata[str(vector_id)] = {
-                'vector_id': vector_id,
-                'page_content': metadata.get('page_content') or metadata.get('content', ''),
-                'file_name': metadata.get('file_name', ''),
-                'file_type': metadata.get('file_type', ''),
-                'page_number': metadata.get('page_number'),
-                'timestamp': metadata.get('timestamp'),
-                'start_ts': metadata.get('start_ts'),
-                'end_ts': metadata.get('end_ts'),
-                'filepath': metadata.get('filepath'),
-                'width': metadata.get('width'),
-                'height': metadata.get('height'),
-                'bbox': metadata.get('bbox'),
-                'char_start': metadata.get('char_start'),
-                'char_end': metadata.get('char_end'),
-                'modality': metadata.get('modality', 'text')
-            }
+        # 4. Update Metadata
+        for i, meta in enumerate(new_metadatas):
+            vector_id = ids[i]
+            metadata_store[str(vector_id)] = meta
+            
+        # 5. Persist Immediately
+        self._save_session(session_id)
         
-        self._save_metadata()
-        self._persist_index()
         return len(embeddings)
-    
-    def search(self, query_embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
-        """Search for similar vectors. Optimized for performance."""
-        if self.index.ntotal == 0:
+
+    def search(self, query_embedding: np.ndarray, top_k: int, session_id: str) -> List[Dict[str, Any]]:
+        """Search in specific session index with normalization."""
+        if not session_id:
+            return []
+            
+        session_data = self._load_session(session_id)
+        index = session_data["index"]
+        metadata_store = session_data["metadata"]
+        
+        if index.ntotal == 0:
             return []
         
-        # Optimize: ensure correct dtype and shape upfront
+        # 1. Prepare Query
         query_embedding = np.ascontiguousarray(query_embedding.astype(np.float32))
         if query_embedding.ndim == 1:
             query_embedding = query_embedding.reshape(1, -1)
+            
+        # 2. Normalize Query (L2)
+        faiss.normalize_L2(query_embedding)
         
-        # Limit search to available vectors
-        search_k = min(top_k, self.index.ntotal)
-        scores, indices = self.index.search(query_embedding, search_k)
+        # 3. Search
+        search_k = min(top_k, index.ntotal)
+        scores, indices = index.search(query_embedding, search_k)
         
-        # Optimize: pre-allocate results list and batch metadata lookup
         results = []
-        metadata_keys = [str(idx) for idx in indices[0] if idx != -1]
-        
         for score, idx in zip(scores[0], indices[0]):
-            if idx == -1:  # FAISS returns -1 for empty slots
+            if idx == -1:
                 continue
             
-            # Fast metadata lookup
-            metadata = self.metadata.get(str(idx), {})
-            result = {
-                'vector_id': idx,
-                'score': float(score),
-                **metadata
-            }
-            results.append(result)
-        
+            # 4. Retrieve Metadata by ID
+            meta = metadata_store.get(str(idx))
+            if meta:
+                result = meta.copy()
+                result['score'] = float(score)
+                results.append(result)
+                
         return results
     
-    def _persist_index(self):
-        """Save FAISS index to disk."""
-        faiss.write_index(self.index, self.index_path)
-    
-    def persist(self, path: str = None):
-        """Persist the entire store to disk."""
-        if path:
-            # Save to custom location
-            faiss.write_index(self.index, path)
-            metadata_path = path.replace('.index', '_metadata.json')
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(self.metadata, f, indent=2, ensure_ascii=False)
-        else:
-            # Save to default location
-            self._persist_index()
-            self._save_metadata()
-    
-    def load(self, path: str = None):
-        """Load store from disk."""
-        if path:
-            self.index = faiss.read_index(path)
-            metadata_path = path.replace('.index', '_metadata.json')
-            if os.path.exists(metadata_path):
-                with open(metadata_path, 'r', encoding='utf-8') as f:
-                    self.metadata = json.load(f)
-        else:
-            self._load_or_init()
-    
-    def status(self) -> Dict[str, Any]:
-        """Get store status information."""
-        return {
-            'vectors': self.index.ntotal,
-            'dimension': self.dimension,
-            'files': len(set(meta.get('file_name', '') for meta in self.metadata.values())),
-            'modalities': list(set(meta.get('modality', 'text') for meta in self.metadata.values()))
-        }
-    
-    def rebuild_from_metadata(self):
-        """Rebuild index from stored metadata (for dimension changes)."""
-        if not self.metadata:
-            return
-        
-        # This would require re-computing embeddings from original content
-        # For now, just reinitialize with current dimension
-        self.index = faiss.IndexFlatIP(self.dimension)
-        
-        # Get all embeddings and IDs from metadata
-        embeddings = []
-        ids = []
-        for vector_id, meta in self.metadata.items():
-            # Assuming 'page_content' holds the text for embedding
-            text_to_embed = meta.get('page_content', '')
-            if text_to_embed:
-                # Re-create embedding. This requires access to an embedding function.
-                # This is a placeholder for where you'd call your embedding function.
-                # from ..embeddings import embed_text
-                # embedding = embed_text(text_to_embed)
-                # embeddings.append(embedding)
-                # ids.append(int(vector_id))
-                pass  # Placeholder for re-embedding logic
-    
-        # if embeddings:
-        #     self.index.add_with_ids(np.array(embeddings), np.array(ids))
-        
-        self._persist_index()
+    def get_metadata(self, session_id: str, vector_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieve specific metadata for viewer."""
+        session_data = self._load_session(session_id)
+        return session_data["metadata"].get(str(vector_id))
+
+    def get_session_metadata(self, session_id: str) -> Dict[str, Any]:
+        """Retrieve all metadata for a session."""
+        session_data = self._load_session(session_id)
+        return session_data["metadata"]
 
 # Global store instance for backward compatibility
 _store_instance: Optional[FAISSStore] = None
-
 
 def get_store() -> FAISSStore:
     """Get global store instance."""
@@ -250,23 +234,3 @@ def get_store() -> FAISSStore:
     if _store_instance is None:
         _store_instance = FAISSStore()
     return _store_instance
-
-
-def upsert(items: List[Dict[str, Any]]) -> int:
-    """Upsert items to global store."""
-    return get_store().upsert(items)
-
-
-def search(query_embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
-    """Search global store."""
-    return get_store().search(query_embedding, top_k)
-
-
-def persist(path: str = None):
-    """Persist global store."""
-    get_store().persist(path)
-
-
-def load(path: str = None):
-    """Load global store."""
-    get_store().load(path)

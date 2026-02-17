@@ -2,13 +2,9 @@
 FAISS vector store wrapper with enhanced persistence.
 """
 
-from .faiss_store import FAISSStore, get_store, upsert, search, persist, load
+from .faiss_store import FAISSStore, get_store
 
 __all__ = [
     "FAISSStore",
-    "get_store",
-    "upsert",
-    "search", 
-    "persist",
-    "load"
+    "get_store"
 ]

@@ -10,6 +10,7 @@ import { DialogTitle, DialogDescription } from "./components/ui/dialog";
 import UserMenu from "./components/UserMenu";
 import ProfileModal from "./components/ProfileModal";
 import ChatHistoryItem from "./components/ChatHistoryItem";
+import FileBadge from "./components/FileBadge";
 import { PanelLeft, X, Database, LogOut, SquarePen, Sun, Moon } from "lucide-react";
 
 function App() {
@@ -32,6 +33,20 @@ function App() {
   const [indexedDocs, setIndexedDocs] = useState(0);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  // Track uploaded files in current session with persistence
+  const [sessionFiles, setSessionFiles] = useState(() => {
+    try {
+      const saved = localStorage.getItem("sessionFiles");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Persist session files
+  useEffect(() => {
+    localStorage.setItem("sessionFiles", JSON.stringify(sessionFiles));
+  }, [sessionFiles]);
 
 
   // Real Chat History
@@ -238,7 +253,17 @@ function App() {
   };
 
   const handleSend = async (text) => {
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    // Add user message with attached files
+    const userMessage = { 
+      role: "user", 
+      content: text,
+      files: sessionFiles // Attach current session files to message
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    
+    // Clear session files immediately
+    setSessionFiles([]);
+    
     setIsTyping(true);
 
     let activeChatId = currentChatId;
@@ -341,11 +366,41 @@ function App() {
 
   const handleUploadComplete = (data) => {
     setIndexedDocs((prev) => prev + 1);
+    
+    // Track uploaded file in session
+    if (data.file) {
+      setSessionFiles((prev) => [...new Set([...prev, data.file])]);
+    }
+    
+    // Format file size
+    const formatBytes = (bytes) => {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    };
+    
+    // Get file icon based on type
+    const getFileIcon = (filename) => {
+      if (!filename) return '📄';
+      const ext = filename.split('.').pop().toLowerCase();
+      if (ext === 'pdf') return '📄';
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return '🖼️';
+      if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) return '🎵';
+      if (['doc', 'docx'].includes(ext)) return '📝';
+      return '📄';
+    };
+    
+    const icon = getFileIcon(data.file);
+    const fileSize = data.file_size ? ` • ${formatBytes(data.file_size)}` : '';
+    const chunks = data.vectors_indexed || data.chunks_added || 0;
+    
     setMessages((prev) => [
       ...prev,
       {
         role: "system",
-        content: `Successfully indexed: ${data.file || "document"}`,
+        content: `${icon} Uploaded: ${data.file || "document"} • ${chunks} chunks indexed${fileSize}`,
       },
     ]);
   };
@@ -458,13 +513,22 @@ function App() {
                 <PanelLeft className="w-5 h-5" />
               </button>
             )}
-
           </div>
 
         </header>
 
         <div className={`flex-1 overflow-hidden relative ${isDarkMode ? "bg-gray-900" : "bg-white"}`}>
-          <ChatUI messages={messages} onSend={handleSend} isTyping={isTyping} onUploadComplete={handleUploadComplete} isDarkMode={isDarkMode} />
+          <ChatUI 
+            messages={messages} 
+            onSend={handleSend} 
+            isTyping={isTyping} 
+            onUploadComplete={handleUploadComplete} 
+            isDarkMode={isDarkMode}
+            sessionFiles={sessionFiles}
+            onRemoveFile={(index) => {
+              setSessionFiles(prev => prev.filter((_, i) => i !== index));
+            }}
+          />
         </div>
       </main>
 

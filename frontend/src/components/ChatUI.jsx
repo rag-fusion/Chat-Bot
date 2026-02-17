@@ -1,6 +1,7 @@
 import { Send, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Uploader from "./Uploader";
+import FileBadge from "./FileBadge";
 import { API_BASE_URL } from "../config";
 
 function CitationNumber({ number, onClick }) {
@@ -14,7 +15,7 @@ function CitationNumber({ number, onClick }) {
   );
 }
 
-function ChatMessage({ role, content, sources = [], onOpenSource }) {
+function ChatMessage({ role, content, sources = [], files = [], onOpenSource }) {
   const isUser = role === "user";
   const isSystem = role === "system";
   const hasSourceCitations = sources && sources.length > 0;
@@ -95,6 +96,23 @@ function ChatMessage({ role, content, sources = [], onOpenSource }) {
             </p>
           </div>
 
+          {/* User Attached Files */}
+          {isUser && files && files.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {files.map((file, i) => (
+                <FileBadge 
+                  key={i} 
+                  fileName={file} 
+                  variant="clickable"
+                  onRemove={() => {
+                     const url = `${API_BASE_URL}/static/uploads/${file}`;
+                     window.open(url, '_blank');
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
           {hasSourceCitations && (
             <div className="flex flex-wrap gap-2 text-xs text-gray-500">
               {sources.map((source, i) => (
@@ -120,6 +138,8 @@ export default function ChatUI({
   isTyping = false,
   onUploadComplete,
   isDarkMode = false,
+  sessionFiles = [],
+  onRemoveFile,
 }) {
   const [input, setInput] = useState("");
   const [showUploader, setShowUploader] = useState(false);
@@ -299,14 +319,31 @@ export default function ChatUI({
         }`}
       >
         <div className="max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem] mx-auto">
+          
           <form
             onSubmit={submit}
-            className={`relative flex items-center w-full rounded-full transition-all duration-300 py-3 px-4 ${
+            className={`relative flex flex-col w-full rounded-2xl transition-all duration-300 py-3 px-4 ${
               isFocused
                 ? "bg-[#2f2f2f] ring-1 ring-gray-600"
                 : "bg-[#2f2f2f] hover:bg-[#3f3f3f]"
             }`}
           >
+            {/* File Badges - Show uploaded files INSIDE input area like ChatGPT */}
+            {sessionFiles && sessionFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {sessionFiles.map((file, index) => (
+                  <FileBadge 
+                    key={index} 
+                    fileName={file}
+                    onRemove={() => {
+                      if (onRemoveFile) onRemoveFile(index);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center w-full">
             <button
               type="button"
               onClick={() => setShowUploader(true)}
@@ -339,6 +376,7 @@ export default function ChatUI({
               } ${isOverLimit ? "text-red-500" : ""}`}
               rows={1}
             />
+            </div>
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
               {/* Character Counter */}
               {charCount > 0 && (

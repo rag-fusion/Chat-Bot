@@ -58,7 +58,7 @@ export default function Uploader({ onUploaded }) {
       const form = new FormData();
       form.append("file", file);
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_BASE_URL}/ingest`, {
+      const res = await fetch(`${API_BASE_URL}/api/upload/`, {
         method: "POST",
         headers: {
             "Authorization": `Bearer ${token}`
@@ -110,7 +110,7 @@ export default function Uploader({ onUploaded }) {
         const form = new FormData();
         form.append("file", file);
         const token = localStorage.getItem("token");
-        const res = await fetch(`${API_BASE_URL}/ingest`, {
+        const res = await fetch(`${API_BASE_URL}/api/upload/`, {
           method: "POST",
           headers: {
               "Authorization": `Bearer ${token}`

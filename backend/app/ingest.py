@@ -1,5 +1,6 @@
 import os
 from typing import List, Optional
+from datetime import datetime
 from fastapi import UploadFile, HTTPException
 
 from .ingestion import extract_any
@@ -7,13 +8,15 @@ from .ingestion.base import Chunk
 from .embeddings import embed_text, embed_image
 from .vector_store import get_store
 
-async def process_and_ingest_file(file: UploadFile, storage_dir: str) -> dict:
+async def process_and_ingest_file(file: UploadFile, storage_dir: str, session_id: str) -> dict:
     """
-    Process an uploaded file, extract content, generate embeddings, and store them.
+    Process an uploaded file, extract content, generate embeddings, and store them in session context.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
     
+    # We still store the file in the common uploads folder for now, 
+    # but the vector index is isolated per session.
     dest_path = os.path.join(storage_dir, file.filename)
     data = await file.read()
     
@@ -111,14 +114,31 @@ async def process_and_ingest_file(file: UploadFile, storage_dir: str) -> dict:
             )
     
     try:
-        vectors_added = store.upsert(items)
+        # Pass session_id to upsert
+        vectors_added = store.upsert(items, session_id=session_id)
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to store vectors in database: {str(e)}"
         )
     
-    return {"chunks_added": len(chunks), "vectors_indexed": vectors_added, "file": file.filename}
+    # Get file size
+    file_size = os.path.getsize(dest_path) if os.path.exists(dest_path) else 0
+    
+    # Count chunks by modality
+    modality_counts = {}
+    for chunk in chunks:
+        modality = chunk.file_type
+        modality_counts[modality] = modality_counts.get(modality, 0) + 1
+    
+    return {
+        "chunks_added": len(chunks),
+        "vectors_indexed": vectors_added,
+        "file": file.filename,
+        "file_size": file_size,
+        "modality_counts": modality_counts,
+        "upload_timestamp": datetime.now().isoformat()
+    }
 
 
 def _build_metadata(chunk: Chunk) -> dict:
@@ -127,6 +147,7 @@ def _build_metadata(chunk: Chunk) -> dict:
         'content': chunk.content,
         'file_name': chunk.file_name,
         'file_type': chunk.file_type,
+        'modality': chunk.file_type, # Ensure modality is set
         'page_number': chunk.page_number,
         'timestamp': chunk.timestamp,
         'start_ts': getattr(chunk, 'start_ts', None),
@@ -136,8 +157,5 @@ def _build_metadata(chunk: Chunk) -> dict:
         'height': getattr(chunk, 'height', None),
         'bbox': getattr(chunk, 'bbox', None),
         'char_start': getattr(chunk, 'char_start', None),
-        'char_end': getattr(chunk, 'char_end', None),
-        'modality': chunk.file_type
+        'char_end': getattr(chunk, 'char_end', None)
     }
-
-

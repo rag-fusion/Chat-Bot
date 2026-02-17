@@ -1,6 +1,7 @@
 model_backend: llama_cpp
 model_path: ./models/llm/mistral-7b-instruct-v0.2.Q4_K_M.gguf
-top_k: 5
+top_k: 15
+min_relevance_score: 0.65
 max_tokens: 512
 temperature: 0.2
 mongodb_uri: mongodb://localhost:27017
