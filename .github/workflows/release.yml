@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.11]
+        python-version: ["3.11"]
 
     steps:
       - uses: actions/checkout@v4
@@ -23,20 +23,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd backend
           python -m pip install --upgrade pip
           pip install --no-cache-dir torch==2.4.1+cpu torchaudio==2.4.1+cpu --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
 
       - name: Run tests
         run: |
-          cd backend
           python -m pytest tests/ -v
 
       - name: Test imports
         run: |
-          cd backend
-          python -c "import app; print('App imports successfully')"
+          python -c "import backend.app.main; print('App imports successfully')"
 
   build:
     needs: test
@@ -51,16 +48,14 @@ jobs:
 
       - name: Build Docker image
         run: |
-          cd backend
           docker build -t offline-multimodal-rag:latest -f scripts/docker/Dockerfile .
 
       - name: Test Docker image
         run: |
-          docker run --rm offline-multimodal-rag:latest python -c "import app; print('Docker image works')"
+          docker run --rm offline-multimodal-rag:latest python -c "import backend.app.main; print('Docker image works')"
 
       - name: Create release tarball
         run: |
-          cd backend
           chmod +x scripts/build_release.sh
           ./scripts/build_release.sh
 
@@ -69,17 +64,17 @@ jobs:
         with:
           name: release-assets
           path: |
-            backend/offline-multimodal-rag-*.tar.gz
-            backend/release/
+            offline-multimodal-rag-*.tar.gz
+            release/
 
       - name: Create GitHub Release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            backend/offline-multimodal-rag-*.tar.gz
-            backend/release/install.sh
-            backend/release/quickstart.md
+            offline-multimodal-rag-*.tar.gz
+            release/install.sh
+            release/quickstart.md
           generate_release_notes: true
           draft: false
           prerelease: false
