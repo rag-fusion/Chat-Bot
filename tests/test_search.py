@@ -1,20 +1,32 @@
 import os
-import json
-from backend.app.index_store import add_embeddings_with_metadata, save_index, load_or_init_index, connect_db
-from backend.app.embeddings import embed_texts
+import pytest
+import numpy as np
+from backend.app.vector_store import FAISSStore
 
+def test_similarity_flow(tmp_path):
+    # Build a tiny index for test
+    store = FAISSStore(dimension=512, storage_dir=str(tmp_path))
+    texts = ["solar panel efficiency", "wind turbine", "battery storage"]
+    
+    # Mock embeddings (512 dim)
+    embs = np.random.rand(3, 512).astype(np.float32)
+    items = []
+    for i, text in enumerate(texts):
+        items.append({
+            'embedding': embs[i],
+            'metadata': {
+                'content': text,
+                'file_name': 'test.txt',
+                'modality': 'text',
+                'file_id': f'test-{i}',
+                'chunk_index': 0
+            }
+        })
+    
+    added = store.upsert(items, session_id="test_session")
+    assert added == 3
 
-def test_similarity_flow(tmp_path, monkeypatch):
-  # Build a tiny index for test
-  texts = ["solar panel efficiency", "wind turbine", "battery storage"]
-  embs = embed_texts(texts)
-  metas = [{"content": t, "file_name": "test.txt", "file_type": "text", "page_number": None, "timestamp": None, "filepath": "/tmp/test.txt"} for t in texts]
-  added = add_embeddings_with_metadata(embs, metas)
-  assert added == 3
-
-  # simple check: embedding the same text should retrieve itself at top
-  from backend.app.rag import similarity_search
-  res = similarity_search("solar panel", 3)
-  assert res and any("solar" in r["content"] for r in res)
-
-
+    # simple check: search
+    res = store.search(embs[0], top_k=3, session_id="test_session")
+    assert len(res) > 0
+    assert res[0]["page_content"] == texts[0]
