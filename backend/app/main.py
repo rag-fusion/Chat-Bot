@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,14 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 import os
+
+logger = logging.getLogger(__name__)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+)
 
 app = FastAPI(title="Offline Multimodal RAG API")
 
@@ -37,8 +46,6 @@ app.mount("/static", StaticFiles(directory=storage_dir), name="static")
 @app.on_event("startup")
 async def startup_event():
     import torch
-    import logging
-    logger = logging.getLogger("uvicorn")
     
     logger.info("=" * 50)
     logger.info("Startup Check:")
@@ -50,8 +57,7 @@ async def startup_event():
         logger.warning("⚠️ GPU NOT DETECTED. Running in CPU mode.")
     logger.info("=" * 50)
     
-    # No longer loading global index here! 
-    # Indices are lazy-loaded per session.
+    # Indices are lazy-loaded per session — no global index to load.
     
     await connect_to_mongo()
 
@@ -59,7 +65,7 @@ app.add_event_handler("shutdown", close_mongo_connection)
 
 class QueryRequest(BaseModel):
     query: str
-    chat_id: str # Required now for session isolation
+    chat_id: str  # Required for session isolation
     session_files: Optional[List[str]] = None 
 
 @app.post("/query")
@@ -71,6 +77,8 @@ async def query_endpoint(request: QueryRequest, current_user = Depends(get_curre
         if not request.chat_id:
              raise HTTPException(status_code=400, detail="chat_id is required")
 
+        logger.info(f"[QUERY] chat_id={request.chat_id} query={request.query[:80]}...")
+
         # Get Answer with session context
         response = answer_query(
             cfg_path, 
@@ -79,6 +87,8 @@ async def query_endpoint(request: QueryRequest, current_user = Depends(get_curre
             session_files=request.session_files
         )
         
+        logger.info(f"[QUERY] chat_id={request.chat_id} sources_returned={len(response.get('sources', []))}")
+
         # Save to history
         if request.chat_id:
             user_id = str(current_user["_id"])
@@ -88,8 +98,10 @@ async def query_endpoint(request: QueryRequest, current_user = Depends(get_curre
             await ChatHistory.add_message(request.chat_id, "assistant", response["answer"], response.get("sources"))
             
         return response
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Query Error: {e}")
+        logger.error(f"Query Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Routers
@@ -99,14 +111,14 @@ app.include_router(files.router, prefix="/api", tags=["files"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(history.router, prefix="/api/history", tags=["history"])
 app.include_router(list.router, prefix="/api/files", tags=["files"])
-app.include_router(viewer.router, prefix="/api", tags=["viewer"]) # New viewer endpoint
+app.include_router(viewer.router, prefix="/api", tags=["viewer"])
 
 @app.get("/")
 async def root():
     return {"message": "Offline RAG Backend Running", "docs_url": "/docs"}
 
-# Ensure storage directories exist
+# Ensure session storage directory exists
 try:
-    os.makedirs(os.path.join(os.path.dirname(__file__), "..", "storage", "uploads"), exist_ok=True)
+    os.makedirs(os.path.join(os.path.dirname(__file__), "..", "storage", "sessions"), exist_ok=True)
 except Exception as e:
-    print(f"Warning: Could not create storage directory: {e}")
+    logger.warning(f"Could not create storage directory: {e}")

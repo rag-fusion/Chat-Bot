@@ -25,33 +25,21 @@ function TextResult({ result, onOpen }) {
   return (
     <div
       className="group flex cursor-pointer gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent"
-      onClick={() => {
-        if (result?.url) {
-          window.open(
-            result.url.startsWith("http")
-              ? result.url
-              : `${API_BASE_URL}${result.url}`,
-// ...
-            "_blank"
-          );
-        } else {
-          onOpen(result);
-        }
-      }}
+      onClick={() => onOpen(result)}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
         <FileText className="h-5 w-5 text-muted-foreground" />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium">{result.file}</p>
+          <p className="truncate text-sm font-medium">{result.file_name || result.file}</p>
           <ResultScore score={result.score} />
         </div>
         <p className="line-clamp-2 text-xs text-muted-foreground">
-          {result.text}
+          {result.snippet || result.text}
         </p>
         <p className="text-xs text-muted-foreground/60">
-          Page {result.page || 1}
+          Page {result.page_number || result.page || 1}
         </p>
       </div>
     </div>
@@ -59,32 +47,24 @@ function TextResult({ result, onOpen }) {
 }
 
 function ImageResult({ result, onOpen }) {
+  const imgUrl = result.session_id && result.file_name
+    ? `${API_BASE_URL}/api/files/${result.session_id}/${encodeURIComponent(result.file_name)}`
+    : result.url || result.path || "";
+
   return (
     <div
       className="group relative cursor-pointer overflow-hidden rounded-lg border bg-card transition-colors hover:bg-accent"
-      onClick={() => {
-        if (result?.url) {
-          window.open(
-            result.url.startsWith("http")
-              ? result.url
-              : `${API_BASE_URL}${result.url}`,
-// ...
-            "_blank"
-          );
-        } else {
-          onOpen(result);
-        }
-      }}
+      onClick={() => onOpen(result)}
     >
       <img
-        src={result.url || result.path}
+        src={imgUrl}
         alt={result.caption || "Retrieved image"}
         className="aspect-video w-full object-cover"
       />
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-3">
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-sm font-medium text-white">
-            {result.caption || result.file}
+            {result.caption || result.file_name || result.file}
           </p>
           <ResultScore score={result.score} />
         </div>
@@ -104,11 +84,11 @@ function AudioResult({ result, onOpen }) {
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium">{result.file}</p>
+          <p className="truncate text-sm font-medium">{result.file_name || result.file}</p>
           <ResultScore score={result.score} />
         </div>
         <p className="line-clamp-2 text-xs text-muted-foreground">
-          {result.transcript}
+          {result.transcript || result.snippet}
         </p>
         <p className="text-xs text-muted-foreground/60">
           {result.duration
@@ -123,15 +103,25 @@ function AudioResult({ result, onOpen }) {
 }
 
 export default function ContextViewer({ results, onOpen, isDarkMode = false }) {
-  // Filter results by type
-  const textResults = results.filter(
-    (r) => r.type === "text" || (!r.type && r.text)
+  // Map backend source objects to display format
+  // Backend returns: { id, vector_id, session_id, file_name, snippet, page_number, score, modality }
+  const mappedResults = results.map((r) => ({
+    ...r,
+    // Normalize field names for display components
+    file: r.file_name || r.file,
+    text: r.snippet || r.text,
+    page: r.page_number || r.page,
+    type: r.modality || r.type || "text",
+  }));
+
+  const textResults = mappedResults.filter(
+    (r) => r.type === "text" || r.type === "pdf" || r.type === "docx" || (!r.type && r.text)
   );
-  const imageResults = results.filter(
-    (r) => r.type === "image" || (!r.type && (r.url || r.path))
+  const imageResults = mappedResults.filter(
+    (r) => r.type === "image"
   );
-  const audioResults = results.filter(
-    (r) => r.type === "audio" || (!r.type && r.transcript)
+  const audioResults = mappedResults.filter(
+    (r) => r.type === "audio"
   );
 
   return (

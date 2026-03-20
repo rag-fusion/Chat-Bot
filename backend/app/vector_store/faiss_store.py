@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import os
 import json
-import shutil
+import logging
 from typing import Dict, List, Optional, Any, Tuple
 import faiss
 import numpy as np
 
+logger = logging.getLogger(__name__)
 # Global cache for active session stores to avoid constant disk I/O
 # session_id -> {index: faiss.Index, metadata: dict}
 _active_sessions: Dict[str, Dict[str, Any]] = {}
@@ -28,22 +29,30 @@ class FAISSStore:
         """Ensure storage directory exists."""
         os.makedirs(self.sessions_dir, exist_ok=True)
     
-    def _get_session_paths(self, session_id: str) -> Tuple[str, str]:
-        """Get paths for session index and metadata."""
+    def _get_session_paths(self, session_id: str) -> Tuple[str, str, str]:
+        """Get paths for session index, metadata, and files dir."""
         session_dir = os.path.join(self.sessions_dir, session_id)
         os.makedirs(session_dir, exist_ok=True)
+        files_dir = os.path.join(session_dir, "files")
+        os.makedirs(files_dir, exist_ok=True)
         return (
             os.path.join(session_dir, "index.faiss"),
-            os.path.join(session_dir, "metadata.json")
+            os.path.join(session_dir, "metadata.json"),
+            files_dir
         )
 
+    def get_session_files_dir(self, session_id: str) -> str:
+        """Get the files directory for a session."""
+        _, _, files_dir = self._get_session_paths(session_id)
+        return files_dir
     def _load_session(self, session_id: str) -> Dict[str, Any]:
         """Load session index and metadata, or create new."""
         # Return cached if available
         if session_id in _active_sessions:
             return _active_sessions[session_id]
 
-        index_path, metadata_path = self._get_session_paths(session_id)
+        index_path, metadata_path, _ = self._get_session_paths(session_id)
+        logger.info(f"[SESSION LOAD] session_id={session_id} index_path={index_path}")
         
         # Load or create index
         if os.path.exists(index_path):
@@ -51,12 +60,15 @@ class FAISSStore:
                 index = faiss.read_index(index_path)
                 # Verify dimension
                 if index.d != self.dimension:
-                    print(f"Warning: Session {session_id} index dimension mismatch ({index.d} vs {self.dimension}). Resetting.")
+                    logger.warning(f"Session {session_id} index dimension mismatch ({index.d} vs {self.dimension}). Resetting.")
                     index = self._create_new_index()
+                else:
+                    logger.info(f"[SESSION LOAD] Loaded existing index with {index.ntotal} vectors")
             except Exception as e:
-                print(f"Error loading index for session {session_id}: {e}. Creating new.")
+                logger.error(f"Error loading index for session {session_id}: {e}. Creating new.")
                 index = self._create_new_index()
         else:
+            logger.info(f"[SESSION LOAD] Creating new index for session {session_id}")
             index = self._create_new_index()
 
         # Load or create metadata
@@ -65,8 +77,9 @@ class FAISSStore:
             try:
                 with open(metadata_path, 'r', encoding='utf-8') as f:
                     metadata = json.load(f)
+                logger.info(f"[SESSION LOAD] Loaded {len(metadata)} metadata entries")
             except Exception as e:
-                print(f"Error loading metadata for session {session_id}: {e}. Resetting.")
+                logger.error(f"Error loading metadata for session {session_id}: {e}. Resetting.")
                 metadata = {}
 
         session_data = {"index": index, "metadata": metadata}
@@ -86,7 +99,7 @@ class FAISSStore:
             return
 
         session_data = _active_sessions[session_id]
-        index_path, metadata_path = self._get_session_paths(session_id)
+        index_path, metadata_path, _ = self._get_session_paths(session_id)
         
         # Save index
         faiss.write_index(session_data["index"], index_path)
@@ -94,6 +107,7 @@ class FAISSStore:
         # Save metadata
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(session_data["metadata"], f, indent=2, ensure_ascii=False)
+        logger.info(f"[SESSION SAVE] session_id={session_id} vectors={session_data['index'].ntotal} metadata_entries={len(session_data['metadata'])}")
 
     def upsert(self, items: List[Dict[str, Any]], session_id: str) -> int:
         """Upsert items with embedding normalization using add_with_ids."""
@@ -108,16 +122,14 @@ class FAISSStore:
         ids = []
         new_metadatas = []
         
-        # Determine start ID (simple auto-increment based on dict size / max key)
-        # Using max integer key to ensure uniqueness even if some deleted
+        # Determine start ID based on max existing key
         start_id = 0
         if metadata_store:
             try:
-                # Keys are stored as strings in JSON, need conversion
                 int_keys = [int(k) for k in metadata_store.keys()]
                 if int_keys:
                     start_id = max(int_keys) + 1
-            except:
+            except Exception:
                 start_id = len(metadata_store)
 
         for i, item in enumerate(items):
@@ -131,26 +143,28 @@ class FAISSStore:
                 embedding = embedding.reshape(1, -1)
             
             if embedding.shape[1] != self.dimension:
-                print(f"Skipping embedding with wrong dimension: {embedding.shape}")
+                logger.warning(f"Skipping embedding with wrong dimension: {embedding.shape}")
                 continue
             
             # 2. Normalize Embedding (L2) - Vital for Cosine Similarity with IndexFlatIP
             faiss.normalize_L2(embedding)
             
             vector_id = start_id + i
-            embeddings.append(embedding[0]) # Flatten for list
+            embeddings.append(embedding[0])
             ids.append(vector_id)
             
-            # Prepare metadata
+            # Prepare rich metadata
             meta = item.get('metadata', {})
             new_metadatas.append({
                 'vector_id': vector_id,
                 'session_id': session_id,
-                'page_content': meta.get('page_content') or meta.get('content', ''),
+                'file_id': meta.get('file_id', ''),
                 'file_name': meta.get('file_name', ''),
                 'file_type': meta.get('file_type', ''),
-                'modality': meta.get('modality', 'text'), # Explicit modality
+                'modality': meta.get('modality', 'text'),
                 'page_number': meta.get('page_number'),
+                'page_content': meta.get('page_content') or meta.get('content', ''),
+                'chunk_index': meta.get('chunk_index', 0),
                 'timestamp': meta.get('timestamp'),
                 'filepath': meta.get('filepath'),
                 'width': meta.get('width'),
@@ -171,9 +185,11 @@ class FAISSStore:
         for i, meta in enumerate(new_metadatas):
             vector_id = ids[i]
             metadata_store[str(vector_id)] = meta
-            
+        
         # 5. Persist Immediately
         self._save_session(session_id)
+        
+        logger.info(f"[UPSERT] session_id={session_id} added={len(embeddings)} vector_ids={ids} file_names={[m['file_name'] for m in new_metadatas]}")
         
         return len(embeddings)
 
@@ -187,6 +203,7 @@ class FAISSStore:
         metadata_store = session_data["metadata"]
         
         if index.ntotal == 0:
+            logger.info(f"[SEARCH] session_id={session_id} — empty index")
             return []
         
         # 1. Prepare Query
@@ -202,6 +219,8 @@ class FAISSStore:
         scores, indices = index.search(query_embedding, search_k)
         
         results = []
+        retrieved_ids = []
+        retrieved_files = []
         for score, idx in zip(scores[0], indices[0]):
             if idx == -1:
                 continue
@@ -212,7 +231,10 @@ class FAISSStore:
                 result = meta.copy()
                 result['score'] = float(score)
                 results.append(result)
-                
+                retrieved_ids.append(int(idx))
+                retrieved_files.append(meta.get('file_name', ''))
+        
+        logger.info(f"[SEARCH] session_id={session_id} query_top_k={top_k} retrieved_ids={retrieved_ids} files={retrieved_files}")
         return results
     
     def get_metadata(self, session_id: str, vector_id: int) -> Optional[Dict[str, Any]]:
@@ -220,12 +242,13 @@ class FAISSStore:
         session_data = self._load_session(session_id)
         return session_data["metadata"].get(str(vector_id))
 
+
     def get_session_metadata(self, session_id: str) -> Dict[str, Any]:
         """Retrieve all metadata for a session."""
         session_data = self._load_session(session_id)
         return session_data["metadata"]
 
-# Global store instance for backward compatibility
+# Global store instance
 _store_instance: Optional[FAISSStore] = None
 
 def get_store() -> FAISSStore:

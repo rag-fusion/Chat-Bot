@@ -74,21 +74,8 @@ function ChatMessage({ role, content, sources = [], files = [], onOpenSource }) 
                   {sources.map((source, i) => (
                     <CitationNumber
                       key={i}
-                      number={i + 1}
-                      onClick={() => {
-                        // Prefer direct URL when available for instant open
-                        if (source?.url) {
-                          window.open(
-                            source.url.startsWith("http")
-                              ? source.url
-                              : `${API_BASE_URL}${source.url}`,
-// ...
-                            "_blank"
-                          );
-                        } else {
-                          onOpenSource?.(source);
-                        }
-                      }}
+                      number={source.id || i + 1}
+                      onClick={() => onOpenSource?.(source)}
                     />
                   ))}
                 </span>
@@ -140,6 +127,8 @@ export default function ChatUI({
   isDarkMode = false,
   sessionFiles = [],
   onRemoveFile,
+  chatId,
+  onCreateChat,
 }) {
   const [input, setInput] = useState("");
   const [showUploader, setShowUploader] = useState(false);
@@ -300,6 +289,8 @@ export default function ChatUI({
             </div>
             <div className="p-6">
               <Uploader
+                chatId={chatId}
+                onCreateChat={onCreateChat}
                 onUploaded={(data) => {
                   if (onUploadComplete) onUploadComplete(data);
                   setShowUploader(false);

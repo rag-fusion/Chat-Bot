@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import re
+import logging
 import os
 import yaml
 from typing import List, Dict, Any, Optional
 
 from .retriever import get_retriever
 from .llm import build_adapter, load_config
-# from .llm.prompts import build_prompt # We will build custom prompt here for citation binding
 from .llm.adapter import LLMAdapter
 
+logger = logging.getLogger(__name__)
 def answer_query(cfg_path: str, query: str, chat_id: str, session_files: Optional[List[str]] = None) -> dict:
     """
     Answer a query using the RAG pipeline with session context and strict citation binding.
@@ -33,29 +35,31 @@ def answer_query(cfg_path: str, query: str, chat_id: str, session_files: Optiona
     
     # Handle no relevant sources found
     if not sources:
+        logger.info(f"[RAG] chat_id={chat_id} — no relevant sources found")
         return {
             "answer": "I don't have enough relevant information in the uploaded documents to answer this question.",
-            "sources": []
+            "sources": [],
+            "citation_map": {}
         }
     
     # Build Structured Context & Citation Map
     context_parts = []
-    citation_map = {} # citation_number -> vector_id needed for frontend link
+    citation_map = {}
     out_sources = []
     
     for i, s in enumerate(sources, start=1):
-        # Format: [1] (File: doc.pdf, Page: 2) Content...
         content = s.get("page_content") or s.get("content", "")
         file_name = s.get("file_name", "Unknown File")
         page_num = s.get("page_number", "?")
         modality = s.get("modality", "text")
+        vector_id = s.get("vector_id")
         
-        # Store for frontend
         citation_entry = {
             "id": i,
-            "vector_id": s.get("vector_id"), # Crucial for viewer
+            "vector_id": vector_id,
+            "session_id": chat_id,
             "file_name": file_name,
-            "snippet": content[:200] + "...", # Preview
+            "snippet": content[:200] + ("..." if len(content) > 200 else ""),
             "page_number": page_num,
             "score": s.get("score"),
             "modality": modality
@@ -63,17 +67,23 @@ def answer_query(cfg_path: str, query: str, chat_id: str, session_files: Optiona
         out_sources.append(citation_entry)
         citation_map[i] = citation_entry
         
-        # Add to LLM Context
-        context_parts.append(f"[{i}] (File: {file_name}, Type: {modality}) {content}")
+        # LLM Context with structured format
+        context_parts.append(
+            f"[{i}] file={file_name} page={page_num} vector_id={vector_id}\n{content}"
+        )
         
     context_str = "\n\n".join(context_parts)
     
-    # Build Prompt with Explicit Instructions
+    # Strict extraction prompt — do not infer, only extract
     system_prompt = (
-        "You are a helpful AI assistant. Answer the user's question based ONLY on the provided context below.\n"
-        "Cite the sources you use by their number, e.g. [1] or [2].\n"
-        "If the answer is not in the context, say you don't know.\n"
-        "Do not invent information."
+        "You are a precise document extraction assistant. Follow these rules STRICTLY:\n"
+        "1. Answer ONLY using text that is EXPLICITLY written in the context below.\n"
+        "2. Do NOT infer, guess, summarize, or paraphrase. Extract the exact answer.\n"
+        "3. If the exact answer is not explicitly present in the context, say: "
+        "\"The exact answer is not found in the uploaded documents.\"\n"
+        "4. Cite ONLY the specific chunk(s) you extract the answer from, using [1], [2], etc.\n"
+        "5. Do NOT cite chunks you did not use.\n"
+        "6. Keep your answer short and direct."
     )
     
     user_prompt = f"Context:\n{context_str}\n\nQuestion: {query}\n\nAnswer:"
@@ -85,9 +95,25 @@ def answer_query(cfg_path: str, query: str, chat_id: str, session_files: Optiona
     text = adapter.generate(
         full_prompt, 
         max_tokens=int(cfg.get("max_tokens", 512)), 
-        temperature=float(cfg.get("temperature", 0.2)) # Low temp for factual answers
+        temperature=float(cfg.get("temperature", 0.1))
     )
     
-    # Post-processing could verify citations here, but for now we trust LLM + clickable links
+    # Prune citations: only keep sources that are actually cited in the answer
+    used_ids = set()
+    for match in re.finditer(r'\[(\d+)\]', text):
+        used_ids.add(int(match.group(1)))
     
-    return {"answer": text, "sources": out_sources}
+    if used_ids:
+        pruned_sources = [s for s in out_sources if s["id"] in used_ids]
+    else:
+        # If LLM cited nothing but gave an answer, keep top 1 source as context
+        pruned_sources = out_sources[:1] if out_sources else []
+    
+    pruned_map = {s["id"]: s for s in pruned_sources}
+    
+    logger.info(
+        f"[RAG] chat_id={chat_id} retrieved={len(out_sources)} "
+        f"cited_ids={used_ids} pruned_to={len(pruned_sources)}"
+    )
+    
+    return {"answer": text, "sources": pruned_sources, "citation_map": pruned_map}

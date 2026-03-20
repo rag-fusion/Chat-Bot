@@ -3,24 +3,20 @@ import WaveSurfer from "wavesurfer.js";
 import * as pdfjsLib from "pdfjs-dist";
 import { FileAudio, FileText, Image as ImageIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import { API_BASE_URL } from "../config";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
+/**
+ * Build file URL using session-scoped path: /api/files/{session_id}/{file_name}
+ */
 function getFileUrl(item) {
-  // Prefer direct /files URL (potentially with #page anchor) for pdf.js
-  if (item?.url) {
-    return item.url.startsWith("http")
-      ? item.url
-      : `http://localhost:8000${item.url}`;
+  if (item?.session_id && item?.file_name) {
+    return `${API_BASE_URL}/api/files/${item.session_id}/${encodeURIComponent(item.file_name)}`;
   }
-  // Fallback to stable /files by filename
-  const name = item.file || item.title || (item.filepath ? item.filepath.split(/[\\/]/).pop() : "");
-  if (name) return `http://localhost:8000/files/${encodeURIComponent(name)}`;
-  // Fallback to raw storage path if available
-  if (item.filepath) {
-    const tail = item.filepath.split(/storage[\\/]/i)[1] || item.filepath.split(/[\\/]/).pop() || "";
-    return `http://localhost:8000/storage/${tail}`;
-  }
+  // Legacy fallback
+  const name = item?.file_name || item?.file || item?.title || "";
+  if (name) return `${API_BASE_URL}/api/files/${encodeURIComponent(name)}`;
   return "";
 }
 
@@ -88,9 +84,8 @@ function PdfViewer({ url, pageNumber = 1 }) {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d");
 
-        // Calculate scale to fit within modal while maintaining aspect ratio
         const viewport = page.getViewport({ scale: 1 });
-        const maxWidth = 600; // Maximum width in modal
+        const maxWidth = 600;
         const scale = maxWidth / viewport.width;
         const scaledViewport = page.getViewport({ scale });
 
@@ -130,18 +125,56 @@ function PdfViewer({ url, pageNumber = 1 }) {
 }
 
 export default function SourceModal({ item, onClose }) {
+  const [viewerData, setViewerData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch full citation context from viewer API when item has vector_id + session_id
+  useEffect(() => {
+    if (!item) {
+      setViewerData(null);
+      return;
+    }
+
+    if (item.vector_id != null && item.session_id) {
+      setLoading(true);
+      const token = localStorage.getItem("token");
+      fetch(`${API_BASE_URL}/api/viewer/${item.session_id}/${item.vector_id}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          setViewerData(data);
+        })
+        .catch((e) => {
+          console.error("Viewer fetch error:", e);
+          setViewerData(null);
+        })
+        .finally(() => setLoading(false));
+    } else {
+      setViewerData(null);
+    }
+  }, [item]);
+
   if (!item) return null;
 
-  const fileUrl = getFileUrl(item);
+  // Merge viewer data with item for display
+  const displayItem = viewerData
+    ? { ...item, text: viewerData.text, file_name: viewerData.file_name, page_number: viewerData.page_number, modality: viewerData.modality }
+    : item;
+
+  const fileUrl = getFileUrl(displayItem);
+  const modality = displayItem.modality || "text";
+  const pageNum = displayItem.page_number || displayItem.page || 1;
+  const displayText = displayItem.text || displayItem.snippet || "";
 
   return (
     <Dialog open={true} onOpenChange={() => onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader className="flex-row items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-            {item.type === "audio" ? (
+            {modality === "audio" ? (
               <FileAudio className="h-5 w-5 text-primary" />
-            ) : item.type === "image" ? (
+            ) : modality === "image" ? (
               <ImageIcon className="h-5 w-5 text-primary" />
             ) : (
               <FileText className="h-5 w-5 text-primary" />
@@ -149,61 +182,52 @@ export default function SourceModal({ item, onClose }) {
           </div>
           <div className="flex-1">
             <DialogTitle className="text-xl">
-              {item.title || item.file}
+              {displayItem.file_name || displayItem.file || "Source"}
             </DialogTitle>
             <DialogDescription>
               Source preview and extracted content
             </DialogDescription>
-            {item.type !== "image" && (
+            {modality !== "image" && (
               <p className="mt-1 text-sm text-muted-foreground">
-                {item.type === "audio"
-                  ? item.transcript
-                  : `Page ${item.page || 1}`}
+                {modality === "audio"
+                  ? displayItem.transcript
+                  : `Page ${pageNum}`}
               </p>
             )}
           </div>
         </DialogHeader>
 
         <div className="mt-4">
-          {item.type === "audio" ? (
-            <AudioPlayer url={fileUrl} timestamp={item.timestamp} />
-          ) : item.type === "image" ? (
+          {loading ? (
+            <div className="flex items-center justify-center p-8 text-muted-foreground">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+              Loading source...
+            </div>
+          ) : modality === "audio" ? (
+            <AudioPlayer url={fileUrl} timestamp={displayItem.timestamp} />
+          ) : modality === "image" ? (
             <img
               src={fileUrl}
-              alt={item.caption || "Source image"}
+              alt={displayItem.caption || "Source image"}
               className="max-h-[70vh] w-full rounded-lg object-contain"
             />
-          ) : item.type === "pdf" ? (
-            <PdfViewer url={fileUrl} pageNumber={item.page || 1} />
+          ) : fileUrl.toLowerCase().includes(".pdf") ? (
+            <div className="space-y-4">
+              <PdfViewer url={fileUrl} pageNumber={pageNum} />
+              {displayText && (
+                <div className="rounded-lg border bg-muted p-4">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Extracted Text:</p>
+                  <pre className="whitespace-pre-wrap text-sm">{displayText}</pre>
+                </div>
+              )}
+            </div>
           ) : (
-            <TextFallback url={fileUrl} initialText={item.text} />
+            <div className="rounded-lg border bg-muted p-4">
+              <pre className="whitespace-pre-wrap text-sm">{displayText || "No text available."}</pre>
+            </div>
           )}
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function TextFallback({ url, initialText }) {
-  const [text, setText] = useState(initialText || "");
-  useEffect(() => {
-    if (!text && url) {
-      (async () => {
-        try {
-          const res = await fetch(url);
-          if (res.ok) {
-            const t = await res.text();
-            setText(t);
-          }
-        } catch (e) {
-          // ignore
-        }
-      })();
-    }
-  }, [url, text]);
-  return (
-    <div className="rounded-lg border bg-muted p-4">
-      <pre className="whitespace-pre-wrap text-sm">{text || "No text available."}</pre>
-    </div>
   );
 }

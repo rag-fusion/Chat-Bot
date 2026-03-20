@@ -5,6 +5,7 @@ Base classes and utilities for ingestion.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -25,26 +26,85 @@ class Chunk:
     bbox: Optional[str] = None
 
 
-def _split_text(text: str, min_size: int = 200, max_size: int = 500, overlap_ratio: float = 0.2) -> List[str]:
-    """Split text into overlapping chunks."""
+# Patterns that indicate a heading or label line
+_HEADING_RE = re.compile(
+    r'^(?:'
+    r'#{1,6}\s|'                           # Markdown headings
+    r'[A-Z][A-Za-z\s]{2,40}:\s*$|'         # "Title:" style labels
+    r'[A-Z][A-Z\s]{3,40}$|'               # ALL-CAPS headings
+    r'\d+\.\s+[A-Z]|'                      # "1. Heading" numbered section
+    r'(?:project|title|name|abstract|summary|problem|objective|introduction|conclusion)'  # common heading keywords
+    r')',
+    re.IGNORECASE | re.MULTILINE
+)
+
+
+def _split_text(text: str, min_size: int = 150, max_size: int = 600, overlap_ratio: float = 0.15) -> List[str]:
+    """Split text into chunks that preserve heading+value pairs.
+    
+    Strategy:
+    1. Split on paragraph boundaries (double newlines).
+    2. If a paragraph looks like a heading, merge it with the next paragraph.
+    3. Then enforce max_size with sentence-boundary splitting.
+    """
     text = (text or "").strip()
     if not text:
         return []
+
+    # Step 1: Split into paragraphs (double-newline or heading-pattern boundaries)
+    paragraphs = re.split(r'\n{2,}', text)
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+
+    # Step 2: Merge heading paragraphs with the paragraph that follows them
+    merged: List[str] = []
+    i = 0
+    while i < len(paragraphs):
+        para = paragraphs[i]
+        # Check if this paragraph is a heading (short + matches heading pattern)
+        is_heading = (
+            len(para) < 80
+            and _HEADING_RE.search(para)
+            and i + 1 < len(paragraphs)
+        )
+        if is_heading:
+            # Merge heading with next paragraph
+            merged.append(para + "\n" + paragraphs[i + 1])
+            i += 2
+        else:
+            merged.append(para)
+            i += 1
+
+    # Step 3: Build final chunks respecting max_size
     chunks: List[str] = []
-    start = 0
     overlap = int(max_size * overlap_ratio)
-    while start < len(text):
-        end = min(start + max_size, len(text))
-        # try to end at sentence boundary
-        boundary = max(text.rfind(". ", start, end), text.rfind("\n", start, end))
-        if boundary != -1 and boundary + 1 - start >= min_size:
-            end = boundary + 1
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        if end == len(text):
-            break
-        start = max(0, end - overlap)
+
+    for block in merged:
+        if len(block) <= max_size:
+            # Small enough — keep as-is
+            if block:
+                chunks.append(block)
+        else:
+            # Too large — split at sentence boundaries within the block
+            start = 0
+            while start < len(block):
+                end = min(start + max_size, len(block))
+                # Try to end at a sentence boundary
+                boundary = max(
+                    block.rfind(". ", start, end),
+                    block.rfind(".\n", start, end),
+                    block.rfind("\n", start, end)
+                )
+                if boundary != -1 and boundary + 1 - start >= min_size:
+                    end = boundary + 1
+                chunk = block[start:end].strip()
+                if chunk:
+                    chunks.append(chunk)
+                if end >= len(block):
+                    break
+                start = max(0, end - overlap)
+
+    # Drop tiny fragments
+    chunks = [c for c in chunks if len(c) >= 30]
     return chunks
 
 

@@ -4,11 +4,14 @@ Enhanced retrieval with reranking, session isolation, and NTRO safeguards.
 
 from __future__ import annotations
 
+import logging
 import numpy as np
 import faiss
 from typing import List, Dict, Any, Optional
 from ..embeddings import embed_text
 from ..vector_store import get_store
+
+logger = logging.getLogger(__name__)
 
 
 class Retriever:
@@ -36,68 +39,83 @@ class Retriever:
             session_files: (Deprecated/Legacy) prioritized files.
         """
         if not chat_id:
+            logger.warning("[RETRIEVE] No chat_id provided — returning empty")
             return []
+
+        logger.info(f"[RETRIEVE] chat_id={chat_id} query={query_text[:80]}... top_k={top_k} min_score={min_score}")
 
         # 1. Generate query embedding
         query_embedding = embed_text(query_text)
         
-        # 2. Normalize Query (Store.search also does this, but good to be explicit/safe)
-        # Note: faiss key in store handles normalization, so strict double norm is fine but redundant.
-        # We rely on store.search to handle it correctly.
-        
-        # 3. Search in Session Index
-        # Fetch more candidates for filtering/reranking
-        search_k = min(top_k * 5, 100) 
+        # 2. Search in Session Index — fetch modest candidates for filtering
+        search_k = min(top_k * 3, 30) 
         
         try:
             results = self.store.search(query_embedding, search_k, session_id=chat_id)
         except Exception as e:
-            # Handle case where session index doesn't exist yet
-            print(f"Search warning for session {chat_id}: {e}")
+            logger.error(f"[RETRIEVE] Search error for session {chat_id}: {e}")
             return []
         
-        # 4. Filter by Modality
+        # 3. Filter by Modality
         if modality_filter:
             results = [r for r in results if r.get('modality') == modality_filter]
         
-        # 5. Filter by Score Threshold (NTRO Requirement)
-        # IndexFlatIP with normalized vectors = Cosine Similarity (-1 to 1)
+        # 4. Filter by Score Threshold (NTRO Requirement)
         filtered = [r for r in results if r.get('score', 0) >= min_score]
+        
+        logger.info(f"[RETRIEVE] chat_id={chat_id} raw_results={len(results)} after_threshold={len(filtered)} (min_score={min_score})")
         
         if not filtered:
             return []
         
-        # 6. Rerank Results
+        # 5. Rerank Results
         reranked = self.rerank_results(query_text, filtered)
         
-        return reranked[:top_k]
+        final = reranked[:top_k]
+        logger.info(f"[RETRIEVE] chat_id={chat_id} returning {len(final)} results, vector_ids={[r.get('vector_id') for r in final]}")
+        return final
     
     def rerank_results(self, query: str, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Rerank results using multiple signals."""
+        """Rerank results using multiple signals, with heading/label preference."""
         if not results:
             return results
         
+        query_lower = query.lower()
+        # Detect if query asks for a heading/label value
+        heading_query = any(kw in query_lower for kw in [
+            'title', 'name', 'project', 'heading', 'problem statement',
+            'abstract', 'summary', 'objective', 'introduction', 'conclusion'
+        ])
+        
         for result in results:
             score = result.get('score', 0.0)
-            
-            # Boost score for exact matches
             content = (result.get('page_content') or result.get('content', '')).lower()
-            query_lower = query.lower()
+            
+            # Boost for exact query match in content
             if query_lower in content:
                 score += 0.1
             
-            # Boost score for title matches
+            # Boost for heading/label content when query looks for headings
+            if heading_query:
+                import re
+                # Check if chunk contains heading-like patterns
+                if re.search(r'(?:title|project\s*name|problem\s*statement)\s*[:—\-]', content, re.IGNORECASE):
+                    score += 0.15
+                # Boost first-page chunks (titles usually on page 1)
+                if result.get('page_number') == 1:
+                    score += 0.05
+            
+            # Boost for file name match
             file_name = result.get('file_name', '').lower()
             if any(word in file_name for word in query_lower.split()):
                 score += 0.05
             
-            # Boost score for images (often high value)
+            # Boost for images
             if result.get('modality') == 'image':
                 score += 0.03
             
             result['rerank_score'] = score
         
-        # Sort by rerank score
         results.sort(key=lambda x: x.get('rerank_score', 0), reverse=True)
         return results
 

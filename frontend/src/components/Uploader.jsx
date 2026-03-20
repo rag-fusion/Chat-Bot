@@ -17,7 +17,7 @@ const ACCEPTED_FILES = [
   "audio/ogg",
 ].join(",");
 
-export default function Uploader({ onUploaded }) {
+export default function Uploader({ onUploaded, chatId, onCreateChat }) {
   const [dragOver, setDragOver] = useState(false);
   const [status, setStatus] = useState("");
   const [files, setFiles] = useState([]);
@@ -30,7 +30,7 @@ export default function Uploader({ onUploaded }) {
     const droppedFiles = Array.from(e.dataTransfer.files || []);
     if (!droppedFiles.length) return;
     handleFiles(droppedFiles);
-  }, []);
+  }, [chatId]);
 
   const handleFiles = async (newFiles) => {
     const validFiles = newFiles.filter((f) =>
@@ -49,14 +49,34 @@ export default function Uploader({ onUploaded }) {
     await uploadMany(validFiles);
   };
 
+  /**
+   * Ensure we have a chat_id before uploading.
+   * If no chatId exists, call onCreateChat to create one.
+   */
+  const ensureChatId = async () => {
+    if (chatId) return chatId;
+    if (onCreateChat) {
+      const newId = await onCreateChat();
+      return newId;
+    }
+    return null;
+  };
+
   const upload = async (file) => {
     setUploading(true);
     setError("");
     setStatus(`Uploading ${file.name}...`);
 
     try {
+      const activeChatId = await ensureChatId();
+      if (!activeChatId) {
+        throw new Error("Could not create a chat session for upload");
+      }
+
       const form = new FormData();
       form.append("file", file);
+      form.append("chat_id", activeChatId);
+
       const token = localStorage.getItem("token");
       const res = await fetch(`${API_BASE_URL}/api/upload/`, {
         method: "POST",
@@ -95,12 +115,24 @@ export default function Uploader({ onUploaded }) {
       return upload(filesToUpload[0]);
     }
 
-    // Upload files sequentially since batch endpoint doesn't exist
     setUploading(true);
     setError("");
     let successCount = 0;
     let failCount = 0;
     const failedFiles = [];
+
+    // Ensure chat exists before batch upload
+    let activeChatId;
+    try {
+      activeChatId = await ensureChatId();
+      if (!activeChatId) {
+        throw new Error("Could not create a chat session for upload");
+      }
+    } catch (e) {
+      setError(e.message);
+      setUploading(false);
+      return;
+    }
 
     for (let i = 0; i < filesToUpload.length; i++) {
       const file = filesToUpload[i];
@@ -109,6 +141,8 @@ export default function Uploader({ onUploaded }) {
       try {
         const form = new FormData();
         form.append("file", file);
+        form.append("chat_id", activeChatId);
+
         const token = localStorage.getItem("token");
         const res = await fetch(`${API_BASE_URL}/api/upload/`, {
           method: "POST",
@@ -140,7 +174,6 @@ export default function Uploader({ onUploaded }) {
       }
     }
 
-    // Update status with final results
     if (failCount === 0) {
       setStatus(`Successfully uploaded ${successCount} file${successCount > 1 ? "s" : ""}`);
       setError("");
@@ -150,7 +183,6 @@ export default function Uploader({ onUploaded }) {
       setError(`Failed to upload all ${filesToUpload.length} file${filesToUpload.length > 1 ? "s" : ""}`);
     }
 
-    // Remove failed files from the list
     if (failedFiles.length > 0) {
       setFiles((prev) => prev.filter((f) => !failedFiles.includes(f)));
     }

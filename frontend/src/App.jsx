@@ -252,6 +252,32 @@ function App() {
       }
   };
 
+  // Helper: create a new chat and return its ID (used by Uploader before upload)
+  const createChat = async (title = "New Chat") => {
+    try {
+      const chatRes = await fetch(`${API_BASE_URL}/api/chat/new`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ title })
+      });
+      if (chatRes.ok) {
+        const chatData = await chatRes.json();
+        let newId;
+        if (typeof chatData === 'string') newId = chatData;
+        else newId = chatData.chat_id || chatData.id || chatData._id;
+        setCurrentChatId(newId);
+        fetchHistory();
+        return newId;
+      }
+    } catch (e) {
+      console.error("Failed to create chat", e);
+    }
+    return null;
+  };
+
   const handleSend = async (text) => {
     // Add user message with attached files
     const userMessage = { 
@@ -528,6 +554,8 @@ function App() {
             onRemoveFile={(index) => {
               setSessionFiles(prev => prev.filter((_, i) => i !== index));
             }}
+            chatId={currentChatId}
+            onCreateChat={createChat}
           />
         </div>
       </main>

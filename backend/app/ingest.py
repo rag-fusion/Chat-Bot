@@ -1,4 +1,6 @@
 import os
+import uuid
+import logging
 from typing import List, Optional
 from datetime import datetime
 from fastapi import UploadFile, HTTPException
@@ -8,22 +10,33 @@ from .ingestion.base import Chunk
 from .embeddings import embed_text, embed_image
 from .vector_store import get_store
 
-async def process_and_ingest_file(file: UploadFile, storage_dir: str, session_id: str) -> dict:
+logger = logging.getLogger(__name__)
+
+async def process_and_ingest_file(file: UploadFile, session_id: str) -> dict:
     """
-    Process an uploaded file, extract content, generate embeddings, and store them in session context.
+    Process an uploaded file, extract content, generate embeddings,
+    and store them in session-isolated context.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
-    
-    # We still store the file in the common uploads folder for now, 
-    # but the vector index is isolated per session.
-    dest_path = os.path.join(storage_dir, file.filename)
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    # Generate a unique file_id for this upload
+    file_id = str(uuid.uuid4())
+
+    # Store file under session-scoped directory
+    store = get_store()
+    files_dir = store.get_session_files_dir(session_id)
+    dest_path = os.path.join(files_dir, file.filename)
+
+    logger.info(f"[UPLOAD] session_id={session_id} file_id={file_id} file={file.filename} dest={dest_path}")
+
     data = await file.read()
-    
     if not data:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
     
-    # Save file to disk
+    # Save file to session dir
     with open(dest_path, "wb") as f:
         f.write(data)
 
@@ -56,15 +69,9 @@ async def process_and_ingest_file(file: UploadFile, storage_dir: str, session_id
                 detail=f"No content could be extracted from {file.filename}. The file may be corrupted or in an unsupported format."
             )
     
+    logger.info(f"[INGEST] session_id={session_id} file={file.filename} chunks_extracted={len(chunks)}")
+
     # Generate embeddings and store
-    try:
-        store = get_store()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to initialize vector store: {str(e)}"
-        )
-    
     items = []
     text_chunks = []
     image_chunks = []
@@ -88,7 +95,7 @@ async def process_and_ingest_file(file: UploadFile, storage_dir: str, session_id
                 
                 items.append({
                     'embedding': embedding,
-                    'metadata': _build_metadata(chunk)
+                    'metadata': _build_metadata(chunk, file_id=file_id, chunk_index=orig_idx)
                 })
         except Exception as e:
             raise HTTPException(
@@ -105,7 +112,7 @@ async def process_and_ingest_file(file: UploadFile, storage_dir: str, session_id
             
             items.append({
                 'embedding': embedding,
-                'metadata': _build_metadata(chunk)
+                'metadata': _build_metadata(chunk, file_id=file_id, chunk_index=orig_idx)
             })
         except Exception as e:
             raise HTTPException(
@@ -131,25 +138,30 @@ async def process_and_ingest_file(file: UploadFile, storage_dir: str, session_id
         modality = chunk.file_type
         modality_counts[modality] = modality_counts.get(modality, 0) + 1
     
+    logger.info(f"[INGEST DONE] session_id={session_id} file={file.filename} vectors_indexed={vectors_added}")
+    
     return {
         "chunks_added": len(chunks),
         "vectors_indexed": vectors_added,
         "file": file.filename,
+        "file_id": file_id,
         "file_size": file_size,
         "modality_counts": modality_counts,
         "upload_timestamp": datetime.now().isoformat()
     }
 
 
-def _build_metadata(chunk: Chunk) -> dict:
+def _build_metadata(chunk: Chunk, file_id: str = "", chunk_index: int = 0) -> dict:
     """Helper to construct metadata dictionary from a Chunk."""
     return {
         'content': chunk.content,
+        'file_id': file_id,
         'file_name': chunk.file_name,
         'file_type': chunk.file_type,
         'modality': chunk.file_type, # Ensure modality is set
         'page_number': chunk.page_number,
-        'timestamp': chunk.timestamp,
+        'chunk_index': chunk_index,
+        'timestamp': chunk.timestamp or datetime.now().isoformat(),
         'start_ts': getattr(chunk, 'start_ts', None),
         'end_ts': getattr(chunk, 'end_ts', None),
         'filepath': chunk.filepath,
