@@ -18,7 +18,7 @@ docker build -t ${IMAGE_NAME} -f scripts/docker/Dockerfile .
 
 # Test the image
 echo "Testing Docker image..."
-docker run --rm ${IMAGE_NAME} python -c "import app; print('App imports successfully')"
+docker run --rm ${IMAGE_NAME} python -c "import main; print('Docker image works')"
 
 # Save Docker image as tarball
 echo "Creating release tarball..."

@@ -33,7 +33,7 @@ jobs:
 
       - name: Test imports
         run: |
-          python -c "import backend.app.main; print('App imports successfully')"
+          python -c "import main; print('App imports successfully')"
 
   build:
     needs: test
@@ -52,7 +52,7 @@ jobs:
 
       - name: Test Docker image
         run: |
-          docker run --rm offline-multimodal-rag:latest python -c "import backend.app.main; print('Docker image works')"
+          docker run --rm offline-multimodal-rag:latest python -c "import main; print('Docker image works')"
 
       - name: Create release tarball
         run: |
